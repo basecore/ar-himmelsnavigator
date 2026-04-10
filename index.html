@@ -1136,195 +1136,57 @@
                 case 'saturn': return saturnPosition;
                 case 'uranus': return uranusPosition;
                 case 'neptune': return neptunePosition;
-                case 'europa-clipper': return europaClipperPosition;
-                default: return null;
-            }
-        }
+                case 'europa-clipper':
+                    // **ECHTE NASA-DATEN**
+                    const clipperPos = interpolateCoordinate(clipperCoordinates, date);
+                    const earthPos = interpolateCoordinate(earthCoordinates, date);
 
-        function getBodySize(bodyKey, isVisible) {
-            const body = celestialBodies[bodyKey];
-            const baseSize = body ? body.baseSize : 15;
-            return baseSize * (isVisible ? 1.2 : 0.8);
-        }
+                    // Vektor von Erde zu Clipper
+                    const dx = clipperPos.x - earthPos.x;
+                    const dy = clipperPos.y - earthPos.y;
+                    const dz = clipperPos.z - earthPos.z;
 
-        // **CROSSHAIR-ERKENNUNG ALLE 200MS**
-        setInterval(() => {
-            if (tooltipTimeout) {
-                clearTimeout(tooltipTimeout);
-            }
-            
-            tooltipTimeout = setTimeout(() => {
-                checkCrosshairHover();
-            }, 50);
-        }, 200);
+                    // Distanz in AU
+                    const distanceAU = Math.sqrt(dx*dx + dy*dy + dz*dz);
 
-        // ===== STERNE-FUNKTIONEN =====
-        function calculateStarPosition(ra, dec, date, lat, lon) {
-            const J2000 = new Date(2000, 0, 1, 12, 0, 0);
-            const daysSinceJ2000 = (date - J2000) / 86400000;
-            
-            const siderealTime = (280.46061837 + 360.98564736629 * daysSinceJ2000 + lon) % 360;
-            const hourAngle = (siderealTime - ra + 360) % 360;
-            
-            const latRad = lat * Math.PI / 180;
-            const decRad = dec * Math.PI / 180;
-            const haRad = hourAngle * Math.PI / 180;
-            
-            const altitude = Math.asin(
-                Math.sin(latRad) * Math.sin(decRad) + 
-                Math.cos(latRad) * Math.cos(decRad) * Math.cos(haRad)
-            ) * 180 / Math.PI;
-            
-            const azimuth = (Math.atan2(
-                Math.sin(haRad),
-                Math.cos(haRad) * Math.sin(latRad) - Math.tan(decRad) * Math.cos(latRad)
-            ) * 180 / Math.PI + 180) % 360;
-            
-            return { azimuth, altitude };
-        }
+                    // Umrechnung von ekliptikal heliozentrisch (x,y,z) auf Rektaszension und Deklination
+                    // Annäherung: Ekliptikale Länge und Breite
+                    const eclipticLon = Math.atan2(dy, dx);
+                    const eclipticLat = Math.asin(dz / distanceAU);
 
-        function updateStarsDisplay() {
-            if (!starsConfig.showStars || !userLocation.lat || !userLocation.lon) {
-                const canvas = document.getElementById('stars-overlay');
-                const ctx = canvas.getContext('2d');
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                return;
-            }
-            
-            const canvas = document.getElementById('stars-overlay');
-            const ctx = canvas.getContext('2d');
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
-            const now = new Date();
-            
-            brightestStars.forEach(star => {
-                const starPos = calculateStarPosition(star.ra, star.dec, now, userLocation.lat, userLocation.lon);
-                
-                if (starPos.altitude > 0 && isInFieldOfView(starPos.azimuth, starPos.altitude)) {
-                    const azimuthDiff = getShortestAngle(deviceOrientation.azimuth, starPos.azimuth);
-                    const altitudeDiff = starPos.altitude - deviceOrientation.pitch;
-                    
-                    const fovHalf = viewConfig.fieldOfView / 2;
-                    const x = (azimuthDiff / fovHalf) * (window.innerWidth / 2) + window.innerWidth / 2;
-                    const y = (-altitudeDiff / fovHalf) * (window.innerHeight / 2) + window.innerHeight / 2;
-                    
-                    if (x >= 0 && x <= window.innerWidth && y >= 0 && y <= window.innerHeight) {
-                        const brightness = Math.max(0.1, Math.min(1, (6 - star.mag) / 6)) * starsConfig.brightness;
-                        const size = Math.max(1, Math.min(6, (6 - star.mag) / 2)) * starsConfig.size;
-                        
-                        ctx.save();
-                        ctx.globalAlpha = brightness;
-                        ctx.fillStyle = '#ffffff';
-                        ctx.shadowColor = '#ffffff';
-                        ctx.shadowBlur = size;
-                        
-                        ctx.beginPath();
-                        ctx.arc(x, y, size, 0, 2 * Math.PI);
-                        ctx.fill();
-                        
-                        // **NAMEN NUR FÜR HELLSTE STERNE DIREKT ANZEIGEN**
-                        if (starsConfig.showNames && star.mag < 1.5) {
-                            ctx.globalAlpha = 0.7;
-                            ctx.font = '10px Arial';
-                            ctx.textAlign = 'center';
-                            ctx.fillStyle = '#cccccc';
-                            ctx.fillText(star.name, x, y - size - 5);
-                        }
-                        
-                        ctx.restore();
-                    }
-                }
-            });
-        }
+                    // Obliquity der Ekliptik (ca. 23.44 Grad)
+                    const obl = 23.43929 * Math.PI / 180;
 
-        // ===== GIMBAL LOCK PROTECTION FUNKTIONEN =====
-        function applyGimbalLockProtection(currentHeading, pitch) {
-            if (!gimbalLockConfig.enabled) return currentHeading;
-            
-            const isInDeadZone = pitch >= gimbalLockConfig.deadZoneStart && pitch <= gimbalLockConfig.deadZoneEnd;
-            const isInCriticalZone = pitch >= gimbalLockConfig.criticalZoneStart && pitch <= gimbalLockConfig.criticalZoneEnd;
-            
-            if (isInCriticalZone) {
-                if (gimbalLockConfig.lastValidHeading !== null) {
-                    return gimbalLockConfig.lastValidHeading;
-                }
-            } else if (isInDeadZone) {
-                if (gimbalLockConfig.lastValidHeading !== null) {
-                    const transitionFactor = calculateTransitionFactor(pitch);
-                    return interpolateHeading(gimbalLockConfig.lastValidHeading, currentHeading, transitionFactor);
-                }
-            } else {
-                gimbalLockConfig.lastValidHeading = currentHeading;
-            }
-            
-            return currentHeading;
-        }
+                    // RA / Dec konvertierung
+                    const sinDec = Math.sin(eclipticLat) * Math.cos(obl) + Math.cos(eclipticLat) * Math.sin(obl) * Math.sin(eclipticLon);
+                    const dec = Math.asin(sinDec) * 180 / Math.PI;
 
-        function calculateTransitionFactor(pitch) {
-            const absP = Math.abs(pitch);
-            
-            if (absP <= gimbalLockConfig.criticalZoneEnd) {
-                return 0;
-            }
-            
-            const transitionRange = gimbalLockConfig.deadZoneEnd - gimbalLockConfig.criticalZoneEnd;
-            const distanceFromCritical = absP - gimbalLockConfig.criticalZoneEnd;
-            
-            return Math.min(1, distanceFromCritical / transitionRange);
-        }
+                    const yRA = Math.sin(eclipticLon) * Math.cos(obl) - Math.tan(eclipticLat) * Math.sin(obl);
+                    const xRA = Math.cos(eclipticLon);
+                    const ra = (Math.atan2(yRA, xRA) * 180 / Math.PI + 360) % 360;
 
-        function interpolateHeading(from, to, factor) {
-            let diff = (to - from + 540) % 360 - 180;
-            return (from + diff * factor + 360) % 360;
-        }
+                    // Lokale Sternzeit
+                    const jd = (date.getTime() / 86400000) + 2440587.5;
+                    const T = (jd - 2451545.0) / 36525;
+                    const gmst0 = 280.46061837 + 360.98564736629 * (jd - 2451545.0) + 0.000387933 * T * T - T * T * T / 38710000;
+                    const lst = (gmst0 + lon) % 360;
 
-        function getAdaptiveSmoothingFactor(pitch) {
-            if (!gimbalLockConfig.enabled) return compassConfig.smoothingFactor;
-            
-            const absP = Math.abs(pitch);
-            
-            if (absP <= gimbalLockConfig.criticalZoneEnd) {
-                return compassConfig.smoothingFactor * 3;
-            } else if (absP <= gimbalLockConfig.deadZoneEnd) {
-                return compassConfig.smoothingFactor * 2;
-            } else {
-                return compassConfig.smoothingFactor;
-            }
-        }
+                    // Stundenwinkel
+                    const ha = (lst - ra + 360) % 360;
 
-        function isInGimbalLockZone(pitch) {
-            return Math.abs(pitch) <= gimbalLockConfig.deadZoneEnd;
-        }
+                    const latRad = lat * Math.PI / 180;
+                    const decRad = dec * Math.PI / 180;
+                    const haRad = ha * Math.PI / 180;
 
-        // ===== VERBESSERTE LOKALE PLANETEN-BERECHNUNG FÜR ALLE PLANETEN =====
-        function calculatePlanetPositionAdvanced(planetName, date, lat, lon) {
-            const daysSinceEpoch = (date - new Date(2000, 0, 1)) / 86400000;
-            const julianDay = 2451545.0 + daysSinceEpoch;
-            
-            let position = { azimuth: 0, altitude: 0, magnitude: 0, distance: 0, velocity: 0 };
-            
-            switch(planetName) {
-                case 'mercury':
-                    const mercuryL = (252.251 + 4.0923344368 * daysSinceEpoch) % 360;
-                    const mercuryEcc = 0.2056;
-                    const mercuryInc = 7.00;
-                    
-                    const mercuryEccentricAnomaly = mercuryL + mercuryEcc * Math.sin(mercuryL * Math.PI / 180) * 180 / Math.PI;
-                    const mercuryDistance = 0.387 * (1 - mercuryEcc * Math.cos(mercuryEccentricAnomaly * Math.PI / 180));
-                    
-                    const mercuryRA = (mercuryEccentricAnomaly + 90) % 360;
-                    const mercuryDec = Math.sin(mercuryInc * Math.PI / 180) * Math.sin(mercuryEccentricAnomaly * Math.PI / 180) * 25;
-                    
-                    const mercuryHA = (mercuryRA - (date.getHours() + date.getMinutes()/60) * 15 + lon) % 360;
-                    position.azimuth = (Math.atan2(Math.sin(mercuryHA * Math.PI / 180), 
-                        Math.cos(mercuryHA * Math.PI / 180) * Math.sin(lat * Math.PI / 180) - 
-                        Math.tan(mercuryDec * Math.PI / 180) * Math.cos(lat * Math.PI / 180)) * 180 / Math.PI + 360) % 360;
-                    position.altitude = Math.asin(Math.sin(lat * Math.PI / 180) * Math.sin(mercuryDec * Math.PI / 180) + 
-                        Math.cos(lat * Math.PI / 180) * Math.cos(mercuryDec * Math.PI / 180) * Math.cos(mercuryHA * Math.PI / 180)) * 180 / Math.PI;
-                    
-                    position.magnitude = -0.42 + 5 * Math.log10(mercuryDistance * Math.sqrt(mercuryDistance * mercuryDistance + 1 - 2 * mercuryDistance * Math.cos((mercuryL - 180) * Math.PI / 180)));
-                    position.distance = mercuryDistance;
-                    position.velocity = 47.9;
+                    // Azimut & Altitude
+                    const altRad = Math.asin(Math.sin(latRad) * Math.sin(decRad) + Math.cos(latRad) * Math.cos(decRad) * Math.cos(haRad));
+                    const azRad = Math.atan2(-Math.sin(haRad) * Math.cos(decRad), Math.cos(latRad) * Math.sin(decRad) - Math.sin(latRad) * Math.cos(decRad) * Math.cos(haRad));
+
+                    position.azimuth = (azRad * 180 / Math.PI + 360) % 360;
+                    position.altitude = altRad * 180 / Math.PI;
+                    position.distance = distanceAU * 149597870.7; // In km für Anzeige
+                    position.magnitude = 15; // Sehr dunkel
+                    position.velocity = 0; // Velocity entfällt der Einfachheit halber
                     break;
                     
                 case 'venus':
@@ -1549,39 +1411,30 @@
 
         // ===== INITIALISIERUNG =====
         window.addEventListener('load', () => {
-            // Mobile-Friendly Start-Overlay
             const overlay = document.createElement('div');
-            overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:9999;display:flex;flex-direction:column;justify-content:center;align-items:center;color:white;font-family:sans-serif;';
-
-            const title = document.createElement('h1');
-            title.innerText = 'AR Himmelsnavigator';
-            title.style.marginBottom = '20px';
-
-            const startBtn = document.createElement('button');
-            startBtn.innerHTML = '🚀 AR Starten';
-            startBtn.style.cssText = 'padding:15px 30px;font-size:22px;background:#0a84ff;color:white;border:none;border-radius:12px;box-shadow:0 4px 10px rgba(0,0,0,0.5);cursor:pointer;font-weight:bold;';
-
-            const info = document.createElement('p');
-            info.innerHTML = '<br><small>Benötigt Zugriff auf Kamera & Sensoren</small>';
-            info.style.opacity = '0.7';
-
-            overlay.appendChild(title);
-            overlay.appendChild(startBtn);
-            overlay.appendChild(info);
+            overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);z-index:9999;display:flex;flex-direction:column;justify-content:center;align-items:center;color:white;text-align:center;font-family:sans-serif;padding:20px;';
+            overlay.innerHTML = '<h1 style="margin-bottom:20px;">AR Himmelsnavigator</h1><p style="margin-bottom:30px;opacity:0.8;font-size:16px;">Halte das Smartphone senkrecht vor dich.</p><button id="start-ar-btn" style="padding:15px 30px;font-size:20px;background:#0a84ff;color:white;border:none;border-radius:12px;box-shadow:0 4px 10px rgba(0,0,0,0.5);cursor:pointer;font-weight:bold;">🚀 AR Starten</button><p style="margin-top:20px;opacity:0.6;font-size:12px;">Erfordert Kamera- & Sensorzugriff</p>';
             document.body.appendChild(overlay);
 
-            startBtn.addEventListener('click', async () => {
-                overlay.remove(); // Overlay entfernen
-                await requestSensorPermissions(); // Sensoren (braucht User-Klick!)
-                initializeLocation();
-                setupEventListeners();
-                setupPanels();
-                startSensorUpdates();
-                startRealtimeUpdates();
-                resizeCanvas();
-                resizeStarsCanvas();
-                detectOrientation();
-            });
+            document.getElementById('start-ar-btn').addEventListener('click', async () => {
+                overlay.remove();
+                await requestSensorPermissions();
+            initializeLocation();
+            setupEventListeners();
+            setupPanels();
+            startSensorUpdates();
+            startRealtimeUpdates();
+            resizeCanvas();
+            resizeStarsCanvas();
+            detectOrientation();
+            updateCameraStatus();
+            updateInfoPanelForCelestialBody();
+        });
+
+        window.addEventListener('resize', () => {
+            resizeCanvas();
+            resizeStarsCanvas();
+            detectOrientation();
         });
 
         window.addEventListener('orientationchange', () => {
