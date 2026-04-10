@@ -237,6 +237,10 @@
             margin-bottom: 10px;
             padding-bottom: 5px;
             border-bottom: 1px solid rgba(255, 180, 0, 0.3);
+            position: sticky;
+            top: 0;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 10;
         }
 
         .minimize-btn {
@@ -274,15 +278,21 @@
         }
 
         #settings-panel {
-            top: 200px;
+            top: 100px;
+            bottom: 80px;
             right: 20px;
             width: 320px;
+            max-height: calc(100vh - 120px);
+            overflow-y: auto;
         }
 
         #debug-panel {
             top: 380px;
+            bottom: 80px;
             right: 20px;
             width: 300px;
+            max-height: calc(100vh - 400px);
+            overflow-y: auto;
         }
 
         .panel-header {
@@ -294,6 +304,10 @@
             color: #ffb400;
             border-bottom: 1px solid rgba(255, 180, 0, 0.3);
             padding-bottom: 8px;
+            position: sticky;
+            top: 0;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 10;
         }
 
         .panel-toggle {
@@ -480,35 +494,12 @@
             }
             
             #settings-panel {
-                top: 280px;
-            }
-            
-            #debug-panel {
-                top: 460px;
-                left: 5vw;
-            }
-            
-            #compass-rose {
-                font-size: 0.8em;
-                bottom: 120px;
-            }
-
-            #celestial-info {
-                left: 5vw;
-                width: 45vw;
-            }
-
-            #celestial-selector {
-                right: 5vw;
-                width: 40vw;
-            }
-
-            #sensor-mini {
-                left: 80px;
-                right: 80px;
-                width: auto;
-                max-width: calc(100vw - 160px);
-            }
+            top: 100px;
+            bottom: 80px;
+            right: 20px;
+            width: 320px;
+            max-height: calc(100vh - 120px);
+            overflow-y: auto;
         }
 
         .debug-value {
@@ -588,7 +579,7 @@
     <div id="celestial-info" class="minimized">
         <div class="panel-header-with-minimize">
             <span style="color: #ffb400; font-weight: bold;" id="info-title">🌞 Sonneninfo</span>
-            <button class="minimize-btn" onclick="toggleMinimize('celestial-info')">−</button>
+            <button class="minimize-btn" onclick="toggleMinimize('celestial-info')">▼</button>
         </div>
         <div class="info-content">
             <div class="info-row">
@@ -638,7 +629,7 @@
     <div id="celestial-selector" class="minimized">
         <div class="panel-header-with-minimize">
             <span style="color: #ffb400; font-weight: bold;">Sonnensystem</span>
-            <button class="minimize-btn" onclick="toggleMinimize('celestial-selector')">−</button>
+            <button class="minimize-btn" onclick="toggleMinimize('celestial-selector')">▼</button>
         </div>
         <div class="selector-content">
             <button class="selector-button active" id="sun-btn" onclick="selectCelestialBody('sun')">
@@ -679,7 +670,7 @@
     <div id="sensors-readout-panel" class="panel minimized" style="top: 200px; left: 20px; width: 300px; max-height: 50vh;">
         <div class="panel-header">
             <span style="color: #ffb400; font-weight: bold;">📱 Sensor Details</span>
-            <button class="panel-toggle" onclick="togglePanel('sensors-readout-panel')">✖</button>
+            <button class="panel-toggle" onclick="togglePanel('sensors-readout-panel')">▼</button>
         </div>
         <div class="panel-content">
             <div class="sensor-row">
@@ -830,17 +821,8 @@
         let clipperCoordinates = [];
         let earthCoordinates = [];
 
-        
         window.addEventListener('DOMContentLoaded', () => {
             selectCelestialBody('europa-clipper');
-            document.querySelectorAll('.minimize-btn').forEach(btn => {
-                if(btn.closest('.minimized')) {
-                    btn.textContent = '➕';
-                } else {
-                    btn.textContent = '➖';
-                }
-            });
-
 
             if (typeof bodies !== 'undefined') {
                 if (bodies['Clipper'] && bodies['Clipper'].coordinates) {
@@ -1220,7 +1202,15 @@
         }
 
         // **CROSSHAIR-ERKENNUNG ALLE 200MS**
-        setInterval(() => {
+        
+            document.querySelectorAll('.minimize-btn').forEach(btn => {
+                if(btn.closest('.minimized')) {
+                    btn.textContent = '▼';
+                } else {
+                    btn.textContent = '▲';
+                }
+            });
+setInterval(() => {
             if (tooltipTimeout) {
                 clearTimeout(tooltipTimeout);
             }
@@ -1625,11 +1615,8 @@
                 title.textContent = `${body.symbol} ${dName} Info`;
                 riseLabel.textContent = `${dName} Aufg.:`;
                 setLabel.textContent = `${dName} Untg.:`;
-            } ${body.name}info`;
-                riseLabel.textContent = `${body.name}auf.:`;
-                setLabel.textContent = `${body.name}unt.:`;
             }
-            
+
             phaseRow.style.display = currentCelestialBody === 'moon' ? 'flex' : 'none';
             magnitudeRow.style.display = !['sun', 'moon'].includes(currentCelestialBody) ? 'flex' : 'none';
             distanceRow.style.display = !['sun', 'moon'].includes(currentCelestialBody) ? 'flex' : 'none';
@@ -1707,13 +1694,11 @@
             element.classList.toggle('minimized');
 
             if (element.classList.contains('minimized')) {
-                minimizeBtn.textContent = '➕';
+                minimizeBtn.textContent = '▼';
             } else {
-                minimizeBtn.textContent = '➖';
+                minimizeBtn.textContent = '▲';
             }
         }
-
-        // ===== ECHTZEIT-UPDATES =====
         function startRealtimeUpdates() {
             updateRealtimeCelestialPositions();
             
@@ -2640,11 +2625,11 @@ let orientationSensor = null;
         function togglePanel(panelId) {
             const panel = document.getElementById(panelId);
             panel.classList.toggle('minimized');
-            
             const toggle = panel.querySelector('.panel-toggle');
-            toggle.textContent = panel.classList.contains('minimized') ? '▼' : '▲';
+            if (toggle) {
+                toggle.textContent = panel.classList.contains('minimized') ? '▼' : '▲';
+            }
         }
-
         function setupPanels() {
             document.getElementById('sensor-panel').classList.add('minimized');
             document.getElementById('debug-panel').classList.add('minimized');
