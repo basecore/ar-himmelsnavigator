@@ -1928,9 +1928,10 @@ setInterval(() => {
                     
                     document.getElementById('moon-phase').textContent = phaseName;
                 }
+
             } else {
-                document.getElementById('rise-time').textContent = '--:--';
-                document.getElementById('set-time').textContent = '--:--';
+            document.getElementById('rise-time').textContent = (riseSet && riseSet.rise) ? formatRiseSetTime(riseSet.rise) : '--:--';
+            document.getElementById('set-time').textContent = (riseSet && riseSet.set) ? formatRiseSetTime(riseSet.set) : '--:--';
             }
             
             if (!['sun', 'moon'].includes(currentCelestialBody)) {
@@ -2772,10 +2773,6 @@ let orientationSensor = null;
                 };
             }
 
-            if (bodyKey === 'europa-clipper') {
-                return calculateClipperPositionAdvanced(date, lat, lon);
-            }
-
             return calculatePlanetPositionAdvanced(bodyKey, date, lat, lon);
         }
 
@@ -2920,19 +2917,6 @@ let orientationSensor = null;
             });
 
             const riseSet = calculateRiseSet(currentCelestialBody, now, userLocation.lat, userLocation.lon);
-            const infoPanel = document.getElementById('info-panel') || document.getElementById('celestial-info');
-            if (infoPanel) {
-                const existing = document.getElementById('rise-set-extra');
-                if (existing) existing.remove();
-
-                const extra = document.createElement('div');
-                extra.id = 'rise-set-extra';
-                extra.style.marginTop = '8px';
-                extra.style.fontSize = '12px';
-                extra.style.lineHeight = '1.4';
-                extra.innerHTML = `Aufgang: ${formatRiseSetTime(riseSet.rise)}<br>Untergang: ${formatRiseSetTime(riseSet.set)}`;
-                infoPanel.appendChild(extra);
-            }
         }
         </script>
 </body>
