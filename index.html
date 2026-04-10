@@ -104,7 +104,7 @@
             background: rgba(0, 0, 0, 0.9);
             border-radius: 12px;
             padding: 15px;
-            z-index: 25;
+            z-index: 900;
             border: 1px solid rgba(255, 180, 0, 0.3);
             min-width: 200px;
             transition: all 0.3s ease;
@@ -128,7 +128,7 @@
             background: rgba(0, 0, 0, 0.9);
             border-radius: 12px;
             padding: 15px;
-            z-index: 25;
+            z-index: 900;
             border: 1px solid rgba(255, 180, 0, 0.3);
             min-width: 150px;
             transition: all 0.3s ease;
@@ -259,7 +259,7 @@
             background: rgba(0, 0, 0, 0.9);
             border-radius: 12px;
             padding: 15px;
-            z-index: 20;
+            z-index: 1000;
             transition: all 0.3s ease;
             border: 1px solid rgba(255, 180, 0, 0.3);
             max-width: 90vw;
@@ -273,7 +273,7 @@
             pointer-events: none;
         }
 
-        #sensor-panel {
+        #settings-panel {
             top: 200px;
             right: 20px;
             width: 320px;
@@ -362,7 +362,7 @@
             font-weight: bold;
             font-size: 0.8em;
             cursor: pointer;
-            z-index: 30;
+            z-index: 1000;
             transition: all 0.3s;
             box-shadow: 0 4px 15px rgba(255, 180, 0, 0.4);
             width: 50px;
@@ -400,7 +400,7 @@
             border-radius: 50%;
             font-size: 1.2em;
             cursor: pointer;
-            z-index: 30;
+            z-index: 1000;
             transition: all 0.3s;
             box-shadow: 0 4px 15px rgba(244, 67, 54, 0.4);
             width: 50px;
@@ -479,7 +479,7 @@
                 right: 5vw !important;
             }
             
-            #sensor-panel {
+            #settings-panel {
                 top: 280px;
             }
             
@@ -585,7 +585,7 @@
     <div id="celestial-tooltip"></div>
     
     <!-- Himmelskörper-Info LINKS -->
-    <div id="celestial-info">
+    <div id="celestial-info" class="minimized">
         <div class="panel-header-with-minimize">
             <span style="color: #ffb400; font-weight: bold;" id="info-title">🌞 Sonneninfo</span>
             <button class="minimize-btn" onclick="toggleMinimize('celestial-info')">−</button>
@@ -635,7 +635,7 @@
     </div>
     
     <!-- Himmelskörper-Auswahl RECHTS - VERBESSERTER TEXT -->
-    <div id="celestial-selector">
+    <div id="celestial-selector" class="minimized">
         <div class="panel-header-with-minimize">
             <span style="color: #ffb400; font-weight: bold;">Sonnensystem</span>
             <button class="minimize-btn" onclick="toggleMinimize('celestial-selector')">−</button>
@@ -674,13 +674,14 @@
         </div>
     </div>
     
-    <!-- Minimierter Sensorinfo-Bereich -->
-    <div id="sensor-mini">
-        <div class="panel-header-with-minimize">
-            <span style="color: #ffb400; font-weight: bold;">📱 Sensoren</span>
-            <button class="minimize-btn" onclick="toggleMinimize('sensor-mini')">−</button>
+    
+    <!-- Sensor Readout Panel (Popup) -->
+    <div id="sensors-readout-panel" class="panel minimized" style="top: 200px; left: 20px; width: 300px; max-height: 50vh;">
+        <div class="panel-header">
+            <span style="color: #ffb400; font-weight: bold;">📱 Sensor Details</span>
+            <button class="panel-toggle" onclick="togglePanel('sensors-readout-panel')">✖</button>
         </div>
-        <div class="sensor-content">
+        <div class="panel-content">
             <div class="sensor-row">
                 <span class="sensor-label">Kompass:</span>
                 <span class="sensor-value" id="sensor-compass">--°</span>
@@ -703,10 +704,11 @@
             </div>
             <div class="sensor-row">
                 <span class="sensor-label">Genauigkeit:</span>
-                <span class="sensor-value" id="sensor-accuracy">--%</span>
+                <span class="sensor-value" id="sensor-accuracy">--</span>
             </div>
         </div>
     </div>
+
     
     <!-- Kalibrierungs-Button -->
     <button id="calibrate-btn" onclick="toggleCalibration()" title="Kalibrieren">🎯<br>kal.</button>
@@ -714,14 +716,22 @@
         <!-- Kamera-Button -->
     <button id="camera-toggle" onclick="toggleCamera()">📷</button>
 
-    <!-- Einstellungen-Button -->
-    <button id="settings-btn" onclick="togglePanel('sensor-panel')" title="Einstellungen" style="position:fixed;bottom:20px;left:80px;background:#333;color:#ffb400;border:1px solid #ffb400;padding:12px;border-radius:50%;font-size:1.2em;cursor:pointer;z-index:30;width:50px;height:50px;box-shadow:0 4px 15px rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;">⚙️</button>
+    
+    <!-- Settings Button -->
+    <button id="settings-btn" onclick="togglePanel('settings-panel')" title="Einstellungen" style="position: fixed; bottom: 20px; left: 80px; background: #333; color: #ffb400; border: 1px solid #ffb400; padding: 12px; border-radius: 50%; font-size: 1.2em; cursor: pointer; z-index: 1000; width: 50px; height: 50px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;">⚙️</button>
+
+    <!-- Sensors Readout Button -->
+    <button id="sensors-btn" onclick="togglePanel('sensors-readout-panel')" title="Sensoren" style="position: fixed; bottom: 20px; left: 140px; background: #333; color: #00f3ff; border: 1px solid #00f3ff; padding: 12px; border-radius: 50%; font-size: 1.2em; cursor: pointer; z-index: 1000; width: 50px; height: 50px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;">📱</button>
+
+    <!-- Reset Calibration Button -->
+    <button id="reset-cal-btn" onclick="resetCalibration()" title="Kalibrierung zurücksetzen" style="display: none; position: fixed; bottom: 20px; right: 80px; background: #ff3333; color: #fff; border: none; padding: 12px; border-radius: 50%; font-size: 1.2em; font-weight: bold; cursor: pointer; z-index: 1000; width: 50px; height: 50px; box-shadow: 0 4px 15px rgba(255, 51, 51, 0.4); justify-content: center; align-items: center;">↺</button>
+
     
     <!-- Sensor-Panel -->
-    <div id="sensor-panel" class="panel minimized">
+    <div id="settings-panel" class="panel minimized">
         <div class="panel-header">
             <span>🧭 Einstellungen</span>
-            <button class="panel-toggle" onclick="togglePanel('sensor-panel')">▼</button>
+            <button class="panel-toggle" onclick="togglePanel('settings-panel')">▼</button>
         </div>
         <div class="panel-content">
             <div class="control-group">
@@ -820,7 +830,18 @@
         let clipperCoordinates = [];
         let earthCoordinates = [];
 
+        
         window.addEventListener('DOMContentLoaded', () => {
+            selectCelestialBody('europa-clipper');
+            document.querySelectorAll('.minimize-btn').forEach(btn => {
+                if(btn.closest('.minimized')) {
+                    btn.textContent = '➕';
+                } else {
+                    btn.textContent = '➖';
+                }
+            });
+
+
             if (typeof bodies !== 'undefined') {
                 if (bodies['Clipper'] && bodies['Clipper'].coordinates) {
                     clipperCoordinates = bodies['Clipper'].coordinates;
@@ -853,8 +874,7 @@
                     return {
                         x: before.x + (after.x - before.x) * factor,
                         y: before.y + (after.y - before.y) * factor,
-                        z: before.z + (after.z - before.z) * factor,
-                        velocity: before.velocity + (after.velocity - before.velocity) * factor
+                        z: before.z + (after.z - before.z) * factor
                     };
                 }
             }
@@ -873,7 +893,7 @@
         let uranusPosition = { azimuth: 0, altitude: 0, magnitude: 0, distance: 0 };
         let neptunePosition = { azimuth: 0, altitude: 0, magnitude: 0, distance: 0 };
         let europaClipperPosition = { azimuth: 0, altitude: 0, magnitude: 0, distance: 0, velocity: 0 };
-        let currentCelestialBody = 'sun';
+        let currentCelestialBody = 'europa-clipper';
         let deviceOrientation = { azimuth: 0, pitch: 0, roll: 0 };
         let calibrationOffset = 0;
         let isCalibrating = false;
@@ -1554,7 +1574,7 @@
                     position.altitude = altRad * 180 / Math.PI;
                     position.distance = distanceAU * 149597870.7; // In km statt AU für UI
                     position.magnitude = 15; // Sehr dunkel
-                    position.velocity = clipperPos.velocity; // <-- Zieht jetzt die echte Geschwindigkeit!
+                    position.velocity = 0; 
                     break;
             }
             
@@ -1600,7 +1620,12 @@
             
             const body = celestialBodies[currentCelestialBody];
             if (body) {
-                title.textContent = `${body.symbol} ${body.name}info`;
+                let dName = body.name;
+                if (dName === 'Europa Clipper') dName = 'Clipper';
+                title.textContent = `${body.symbol} ${dName} Info`;
+                riseLabel.textContent = `${dName} Aufg.:`;
+                setLabel.textContent = `${dName} Untg.:`;
+            } ${body.name}info`;
                 riseLabel.textContent = `${body.name}auf.:`;
                 setLabel.textContent = `${body.name}unt.:`;
             }
@@ -1678,13 +1703,13 @@
         function toggleMinimize(elementId) {
             const element = document.getElementById(elementId);
             const minimizeBtn = element.querySelector('.minimize-btn');
-            
+
             element.classList.toggle('minimized');
-            
+
             if (element.classList.contains('minimized')) {
-                minimizeBtn.textContent = '+';
+                minimizeBtn.textContent = '➕';
             } else {
-                minimizeBtn.textContent = '−';
+                minimizeBtn.textContent = '➖';
             }
         }
 
