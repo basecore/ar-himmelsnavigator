@@ -1595,7 +1595,10 @@ setInterval(() => {
                     position.altitude = altRad * 180 / Math.PI;
                     position.distance = distanceAU * 149597870.7; // In km statt AU für UI
                     position.magnitude = 15; // Sehr dunkel
-                    position.velocity = 0; 
+                    
+                    const clipperSpeed = calculateClipperSpeedKmS(date);
+                    position.velocity = Number.isFinite(clipperSpeed) ? clipperSpeed : 0;
+                    
                     break;
             }
             
@@ -1929,6 +1932,14 @@ setInterval(() => {
                     document.getElementById('moon-phase').textContent = phaseName;
                 }
 
+            } else if (currentCelestialBody === 'europa-clipper' && userLocation) {
+                const rs = calculateClipperRiseSetCached(
+                    now,
+                    userLocation.lat,
+                    userLocation.lon
+                );
+                document.getElementById('rise-time').textContent = formatRiseSetTime(rs.rise);
+                document.getElementById('set-time').textContent = formatRiseSetTime(rs.set);
             } else {
                 const riseSet = calculateRiseSet(currentCelestialBody, now, userLocation.lat, userLocation.lon);
                 document.getElementById('rise-time').textContent = formatRiseSetTime(riseSet.rise);
@@ -2757,6 +2768,86 @@ let orientationSensor = null;
             return distKm / 120;
         }
 
+        let clipperRiseSetCache = {
+            key: null,
+            rise: null,
+            set: null
+        };
+        
+        function refineHorizonCrossing(bodyKey, t1, t2, lat, lon) {
+            let a = new Date(t1);
+            let b = new Date(t2);
+        
+            for (let i = 0; i < 10; i++) {
+                const mid = new Date((a.getTime() + b.getTime()) / 2);
+        
+                const altA = getBodyAltAz(bodyKey, a, lat, lon)?.altitude;
+                const altMid = getBodyAltAz(bodyKey, mid, lat, lon)?.altitude;
+        
+                if (!Number.isFinite(altA) || !Number.isFinite(altMid)) break;
+        
+                const crossingInLeftHalf =
+                    (altA < 0 && altMid >= 0) || (altA >= 0 && altMid < 0);
+        
+                if (crossingInLeftHalf) {
+                    b = mid;
+                } else {
+                    a = mid;
+                }
+            }
+        
+            return new Date((a.getTime() + b.getTime()) / 2);
+        }
+        
+        function calculateClipperRiseSetCached(date, lat, lon) {
+            const key =
+                `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}_${lat.toFixed(3)}_${lon.toFixed(3)}`;
+        
+            if (clipperRiseSetCache.key === key) {
+                return clipperRiseSetCache;
+            }
+        
+            const startOfDay = new Date(date);
+            startOfDay.setHours(0, 0, 0, 0);
+        
+            let rise = null;
+            let set = null;
+        
+            let prevTime = new Date(startOfDay);
+            let prevAlt = getBodyAltAz('europa-clipper', prevTime, lat, lon)?.altitude;
+        
+            for (let minute = 5; minute <= 24 * 60; minute += 5) {
+                const currentTime = new Date(startOfDay.getTime() + minute * 60000);
+                const currentAlt = getBodyAltAz('europa-clipper', currentTime, lat, lon)?.altitude;
+        
+                if (Number.isFinite(prevAlt) && Number.isFinite(currentAlt)) {
+                    if (rise === null && prevAlt < 0 && currentAlt >= 0) {
+                        rise = refineHorizonCrossing('europa-clipper', prevTime, currentTime, lat, lon);
+                    }
+        
+                    if (set === null && prevAlt >= 0 && currentAlt < 0) {
+                        set = refineHorizonCrossing('europa-clipper', prevTime, currentTime, lat, lon);
+                    }
+        
+                    if (rise && set) break;
+                }
+        
+                prevTime = currentTime;
+                prevAlt = currentAlt;
+            }
+        
+            clipperRiseSetCache = { key, rise, set };
+            return clipperRiseSetCache;
+        }
+        
+        function formatRiseSetTime(dateObj) {
+            if (!dateObj) return '--:--';
+            return dateObj.toLocaleTimeString('de-DE', {
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
         function getBodyAltAz(bodyKey, date, lat, lon) {
             if (bodyKey === 'sun') {
                 const p = SunCalc.getPosition(date, lat, lon);
@@ -2773,9 +2864,9 @@ let orientationSensor = null;
                     altitude: p.altitude * 180 / Math.PI
                 };
             }
-
+            
             if (bodyKey === 'europa-clipper') {
-                return calculateClipperPositionAdvanced(date, lat, lon);
+                return calculatePlanetPositionAdvanced('europa-clipper', date, lat, lon);
             }
 
             return calculatePlanetPositionAdvanced(bodyKey, date, lat, lon);
