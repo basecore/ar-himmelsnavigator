@@ -4,874 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>AR Himmelsnavigator - Vollständiges Sonnensystem</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/suncalc/1.9.0/suncalc.min.js">
-        function moonPhaseName(phase) {
-            const p = ((phase % 1) + 1) % 1;
-            if (p < 0.03 || p > 0.97) return 'Neumond';
-            if (p < 0.22) return 'Zunehmende Sichel';
-            if (p < 0.28) return 'Erstes Viertel';
-            if (p < 0.47) return 'Zunehmender Mond';
-            if (p < 0.53) return 'Vollmond';
-            if (p < 0.72) return 'Abnehmender Mond';
-            if (p < 0.78) return 'Letztes Viertel';
-            return 'Abnehmende Sichel';
-        }
-
-        function computeClipperStateAtTime(date, lat, lon) {
-            const position = { azimuth: 0, altitude: -90, magnitude: 15, distance: 0, velocity: 0 };
-
-            const clipperPos = interpolateCoordinate(clipperCoordinates, date);
-            const earthPos = interpolateCoordinate(earthCoordinates, date);
-
-            if (!clipperPos || !earthPos) return position;
-
-            const dx = clipperPos.x - earthPos.x;
-            const dy = clipperPos.y - earthPos.y;
-            const dz = clipperPos.z - earthPos.z;
-
-            const distanceAU = Math.sqrt(dx * dx + dy * dy + dz * dz);
-            position.distance = distanceAU * 149597870.7;
-
-            const eclipticLon = Math.atan2(dy, dx);
-            const eclipticLat = Math.asin(dz / distanceAU);
-            const obl = 23.43929 * Math.PI / 180;
-
-            const sinDec =
-                Math.sin(eclipticLat) * Math.cos(obl) +
-                Math.cos(eclipticLat) * Math.sin(obl) * Math.sin(eclipticLon);
-
-            const dec = Math.asin(sinDec);
-
-            const yRA =
-                Math.sin(eclipticLon) * Math.cos(obl) -
-                Math.tan(eclipticLat) * Math.sin(obl);
-            const xRA = Math.cos(eclipticLon);
-            const ra = (Math.atan2(yRA, xRA) * 180 / Math.PI + 360) % 360;
-
-            const jd = (date.getTime() / 86400000) + 2440587.5;
-            const T = (jd - 2451545.0) / 36525;
-            const gmst =
-                280.46061837 +
-                360.98564736629 * (jd - 2451545.0) +
-                0.000387933 * T * T -
-                (T * T * T) / 38710000;
-
-            const lst = (gmst + lon + 360) % 360;
-            const ha = (lst - ra + 360) % 360;
-
-            const latRad = lat * Math.PI / 180;
-            const haRad = ha * Math.PI / 180;
-
-            const altRad = Math.asin(
-                Math.sin(latRad) * Math.sin(dec) +
-                Math.cos(latRad) * Math.cos(dec) * Math.cos(haRad)
-            );
-
-            const azRad = Math.atan2(
-                -Math.sin(haRad) * Math.cos(dec),
-                Math.cos(latRad) * Math.sin(dec) -
-                Math.sin(latRad) * Math.cos(dec) * Math.cos(haRad)
-            );
-
-            position.azimuth = (azRad * 180 / Math.PI + 360) % 360;
-            position.altitude = altRad * 180 / Math.PI;
-
-            const prevDate = new Date(date.getTime() - 30 * 60000);
-            const nextDate = new Date(date.getTime() + 30 * 60000);
-            const prevClip = interpolateCoordinate(clipperCoordinates, prevDate);
-            const nextClip = interpolateCoordinate(clipperCoordinates, nextDate);
-
-            if (prevClip && nextClip) {
-                const ddx = nextClip.x - prevClip.x;
-                const ddy = nextClip.y - prevClip.y;
-                const ddz = nextClip.z - prevClip.z;
-                const deltaKm = Math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz) * 149597870.7;
-                position.velocity = deltaKm / 3600;
-            }
-
-            return position;
-        }
-
-        function getBodyPositionAtTime(bodyKey, date) {
-            if (!userLocation.lat || !userLocation.lon) return null;
-
-            switch (bodyKey) {
-                case 'sun': {
-                    const p = SunCalc.getPosition(date, userLocation.lat, userLocation.lon);
-                    return {
-                        azimuth: ((p.azimuth * 180 / Math.PI) + 180) % 360,
-                        altitude: p.altitude * 180 / Math.PI
-                    };
-                }
-                case 'moon': {
-                    const p = SunCalc.getMoonPosition(date, userLocation.lat, userLocation.lon);
-                    return {
-                        azimuth: ((p.azimuth * 180 / Math.PI) + 180) % 360,
-                        altitude: p.altitude * 180 / Math.PI
-                    };
-                }
-                case 'mercury':
-                case 'venus':
-                case 'mars':
-                case 'jupiter':
-                case 'saturn':
-                case 'uranus':
-                case 'neptune':
-                    return calculatePlanetPositionAdvanced(bodyKey, date, userLocation.lat, userLocation.lon);
-                case 'europa-clipper':
-                    return computeClipperStateAtTime(date, userLocation.lat, userLocation.lon);
-                default:
-                    return null;
-            }
-        }
-
-        function interpolateZeroCrossing(t1, a1, t2, a2) {
-            const ratio = (0 - a1) / (a2 - a1);
-            return new Date(t1.getTime() + ratio * (t2.getTime() - t1.getTime()));
-        }
-
-        function calculateRiseSetForBody(bodyKey, baseDate = new Date()) {
-            const start = new Date(baseDate.getTime() - 12 * 3600000);
-            const end = new Date(baseDate.getTime() + 12 * 3600000);
-            const stepMs = 5 * 60000;
-
-            let rise = null;
-            let set = null;
-
-            let prevTime = start;
-            let prevPos = getBodyPositionAtTime(bodyKey, prevTime);
-            if (!prevPos) return { rise: null, set: null };
-
-            for (let t = start.getTime() + stepMs; t <= end.getTime(); t += stepMs) {
-                const currentTime = new Date(t);
-                const currentPos = getBodyPositionAtTime(bodyKey, currentTime);
-                if (!currentPos) continue;
-
-                if (rise === null && prevPos.altitude < 0 && currentPos.altitude >= 0) {
-                    rise = interpolateZeroCrossing(prevTime, prevPos.altitude, currentTime, currentPos.altitude);
-                }
-
-                if (set === null && prevPos.altitude >= 0 && currentPos.altitude < 0) {
-                    set = interpolateZeroCrossing(prevTime, prevPos.altitude, currentTime, currentPos.altitude);
-                }
-
-                prevTime = currentTime;
-                prevPos = currentPos;
-            }
-
-            return { rise, set };
-        }
-
-        function toggleCalibration() {
-            if (!userLocation.lat || !userLocation.lon) return;
-
-            if (!isCalibrating) {
-                startCalibration();
-            } else {
-                finishCalibration();
-            }
-        }
-
-        function startCalibration() {
-            isCalibrating = true;
-            const btn = document.getElementById('calibrate-btn');
-            if (btn) {
-                btn.innerHTML = '🎯<br>fix';
-                btn.classList.add('calibrating');
-            }
-        }
-
-        function finishCalibration() {
-            const celestialPos = getCurrentCelestialPosition();
-            if (!celestialPos) return;
-
-            calibrationOffset = (celestialPos.azimuth - deviceOrientation.azimuth + 360) % 360;
-            isCalibrating = false;
-
-            const btn = document.getElementById('calibrate-btn');
-            const resetBtn = document.getElementById('reset-cal-btn');
-
-            if (btn) {
-                btn.innerHTML = '✅<br>ok';
-                btn.classList.remove('calibrating');
-            }
-
-            if (resetBtn) {
-                resetBtn.style.display = 'flex';
-            }
-
-            setTimeout(() => {
-                const body = celestialBodies[currentCelestialBody];
-                if (btn) {
-                    btn.innerHTML = body ? `${body.symbol}<br>kal.` : '🎯<br>kal.';
-                }
-            }, 1500);
-
-            updateRealtimeCelestialPositions();
-            updateCelestialInViewport();
-            updateCompassRose();
-        }
-
-        function resetCalibration() {
-            calibrationOffset = 0;
-            isCalibrating = false;
-
-            const resetBtn = document.getElementById('reset-cal-btn');
-            const calBtn = document.getElementById('calibrate-btn');
-
-            if (resetBtn) resetBtn.style.display = 'none';
-
-            if (calBtn) {
-                const body = celestialBodies[currentCelestialBody];
-                calBtn.innerHTML = body ? `${body.symbol}<br>kal.` : '🎯<br>kal.';
-                calBtn.classList.remove('calibrating');
-            }
-
-            updateRealtimeCelestialPositions();
-            updateCelestialInViewport();
-            updateCompassRose();
-        }
-
-        async function updateRealtimeCelestialPositions() {
-            if (!userLocation.lat || !userLocation.lon) return;
-
-            const now = new Date();
-
-            sunPosition = getBodyPositionAtTime('sun', now) || { azimuth: 0, altitude: -90 };
-            moonPosition = getBodyPositionAtTime('moon', now) || { azimuth: 0, altitude: -90 };
-
-            mercuryPosition = getBodyPositionAtTime('mercury', now) || { azimuth: 0, altitude: -90, magnitude: 0, distance: 0 };
-            venusPosition = getBodyPositionAtTime('venus', now) || { azimuth: 0, altitude: -90, magnitude: 0, distance: 0 };
-            marsPosition = getBodyPositionAtTime('mars', now) || { azimuth: 0, altitude: -90, magnitude: 0, distance: 0 };
-            jupiterPosition = getBodyPositionAtTime('jupiter', now) || { azimuth: 0, altitude: -90, magnitude: 0, distance: 0 };
-            saturnPosition = getBodyPositionAtTime('saturn', now) || { azimuth: 0, altitude: -90, magnitude: 0, distance: 0 };
-            uranusPosition = getBodyPositionAtTime('uranus', now) || { azimuth: 0, altitude: -90, magnitude: 0, distance: 0 };
-            neptunePosition = getBodyPositionAtTime('neptune', now) || { azimuth: 0, altitude: -90, magnitude: 0, distance: 0 };
-            europaClipperPosition = getBodyPositionAtTime('europa-clipper', now) || { azimuth: 0, altitude: -90, magnitude: 0, distance: 0, velocity: 0 };
-
-            updateRealtimeInfo();
-            updateCelestialInViewport();
-            updateStarsDisplay();
-            updateCompassRose();
-            drawCelestialPathInFOV();
-        }
-
-        function updateRealtimeInfo() {
-            if (!userLocation.lat || !userLocation.lon) return;
-
-            const now = new Date();
-            const celestialPos = getCurrentCelestialPosition();
-            if (!celestialPos) return;
-
-            const title = document.getElementById('info-title');
-            const riseLabel = document.getElementById('rise-label');
-            const setLabel = document.getElementById('set-label');
-
-            const phaseRow = document.getElementById('phase-row');
-            const magnitudeRow = document.getElementById('magnitude-row');
-            const distanceRow = document.getElementById('distance-row');
-            const velocityRow = document.getElementById('velocity-row');
-            const riseSetRow = document.getElementById('rise-set-row');
-            const setRow = document.getElementById('set-row');
-
-            const body = celestialBodies[currentCelestialBody];
-            if (body && title && riseLabel && setLabel) {
-                let dName = body.name;
-                if (dName === 'Europa Clipper') dName = 'Clipper';
-                title.textContent = `${body.symbol} ${dName} Info`;
-                riseLabel.textContent = `${dName} Aufg.:`;
-                setLabel.textContent = `${dName} Untg.:`;
-            }
-
-            if (phaseRow) phaseRow.style.display = currentCelestialBody === 'moon' ? 'flex' : 'none';
-            if (magnitudeRow) magnitudeRow.style.display = !['sun', 'moon', 'europa-clipper'].includes(currentCelestialBody) ? 'flex' : 'none';
-            if (distanceRow) distanceRow.style.display = !['sun', 'moon'].includes(currentCelestialBody) ? 'flex' : 'none';
-            if (velocityRow) velocityRow.style.display = currentCelestialBody === 'europa-clipper' ? 'flex' : 'none';
-            if (riseSetRow) riseSetRow.style.display = 'flex';
-            if (setRow) setRow.style.display = 'flex';
-
-            document.getElementById('current-time').textContent = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            document.getElementById('celestial-azimuth').textContent = `${celestialPos.azimuth.toFixed(1)}°`;
-            document.getElementById('celestial-elevation').textContent = `${celestialPos.altitude.toFixed(1)}°`;
-
-            const celestialInView = isInFieldOfView(celestialPos.azimuth, celestialPos.altitude);
-            const inViewElement = document.getElementById('celestial-in-view');
-            if (inViewElement) {
-                inViewElement.textContent = celestialInView ? 'JA' : 'NEIN';
-                inViewElement.style.color = celestialInView ? '#4CAF50' : '#f44336';
-            }
-
-            const riseSet = calculateRiseSetForBody(currentCelestialBody, now);
-            document.getElementById('rise-time').textContent = riseSet.rise
-                ? riseSet.rise.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
-                : '--:--';
-
-            document.getElementById('set-time').textContent = riseSet.set
-                ? riseSet.set.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
-                : '--:--';
-
-            if (currentCelestialBody === 'moon') {
-                const illum = SunCalc.getMoonIllumination(now);
-                const phaseName = moonPhaseName(illum.phase);
-                const moonPhaseEl = document.getElementById('moon-phase');
-                if (moonPhaseEl) moonPhaseEl.textContent = phaseName;
-            }
-
-            const magEl = document.getElementById('magnitude');
-            if (magEl) {
-                magEl.textContent =
-                    (celestialPos.magnitude !== undefined && currentCelestialBody !== 'europa-clipper')
-                        ? `${celestialPos.magnitude.toFixed(1)}m`
-                        : '--';
-            }
-
-            const distEl = document.getElementById('distance');
-            if (distEl) {
-                if (currentCelestialBody === 'europa-clipper') {
-                    distEl.textContent = `${Math.round(celestialPos.distance).toLocaleString('de-DE')} km`;
-                } else if (celestialPos.distance !== undefined) {
-                    distEl.textContent = `${celestialPos.distance.toFixed(2)} AE`;
-                } else {
-                    distEl.textContent = '--';
-                }
-            }
-
-            const velEl = document.getElementById('velocity');
-            if (velEl) {
-                velEl.textContent =
-                    (celestialPos.velocity !== undefined)
-                        ? `${celestialPos.velocity.toFixed(1)} km/s`
-                        : '--';
-            }
-        }
-
-        function updateCompassRose() {
-            const compassRose = document.getElementById('compass-rose');
-            if (!compassRose) return;
-
-            let html = '';
-            compassDirections.forEach(dir => {
-                const diff = Math.abs(getShortestAngle(deviceOrientation.azimuth, dir.azimuth));
-                const isActive = diff < 22.5;
-                html += `<div class="compass-point ${isActive ? 'active' : ''}">${dir.name}</div>`;
-            });
-
-            compassRose.innerHTML = html;
-        }
-
-        function drawCelestialPathInFOV() {
-            const svg = document.getElementById('celestial-path');
-            if (!svg || !userLocation.lat || !userLocation.lon) return;
-
-            svg.innerHTML = '';
-
-            const width = window.innerWidth;
-            const height = window.innerHeight;
-            const fovHalf = viewConfig.fieldOfView / 2;
-
-            const now = new Date();
-            const start = new Date(now.getTime() - 12 * 3600000);
-            const end = new Date(now.getTime() + 12 * 3600000);
-            const stepMs = (currentCelestialBody === 'sun' || currentCelestialBody === 'moon') ? 5 * 60000 : 10 * 60000;
-
-            const colors = {
-                'sun': 'rgba(255, 180, 0, 0.75)',
-                'moon': 'rgba(200, 200, 255, 0.75)',
-                'mercury': 'rgba(140, 120, 83, 0.75)',
-                'venus': 'rgba(255, 198, 73, 0.75)',
-                'mars': 'rgba(255, 100, 100, 0.75)',
-                'jupiter': 'rgba(255, 200, 100, 0.75)',
-                'saturn': 'rgba(250, 178, 123, 0.75)',
-                'uranus': 'rgba(79, 208, 231, 0.75)',
-                'neptune': 'rgba(75, 112, 221, 0.75)',
-                'europa-clipper': 'rgba(100, 255, 255, 0.85)'
-            };
-
-            const segments = [];
-            let currentSegment = [];
-
-            for (let t = start.getTime(); t <= end.getTime(); t += stepMs) {
-                const testTime = new Date(t);
-                const pos = getBodyPositionAtTime(currentCelestialBody, testTime);
-                if (!pos) continue;
-
-                const azimuthDiff = getShortestAngle(deviceOrientation.azimuth, pos.azimuth);
-                const altitudeDiff = pos.altitude - deviceOrientation.pitch;
-
-                const inView = Math.abs(azimuthDiff) <= fovHalf && Math.abs(altitudeDiff) <= fovHalf;
-
-                if (!inView) {
-                    if (currentSegment.length > 1) segments.push(currentSegment);
-                    currentSegment = [];
-                    continue;
-                }
-
-                const x = (azimuthDiff / fovHalf) * (width / 2) + width / 2;
-                const y = (-altitudeDiff / fovHalf) * (height / 2) + height / 2;
-
-                const prev = currentSegment[currentSegment.length - 1];
-                if (prev) {
-                    const jump = Math.hypot(x - prev.x, y - prev.y);
-                    if (jump > width * 0.35) {
-                        if (currentSegment.length > 1) segments.push(currentSegment);
-                        currentSegment = [];
-                    }
-                }
-
-                currentSegment.push({ x, y });
-            }
-
-            if (currentSegment.length > 1) segments.push(currentSegment);
-
-            segments.forEach(points => {
-                const pathData = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
-                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                path.setAttribute('d', pathData);
-                path.setAttribute('fill', 'none');
-                path.setAttribute('stroke', colors[currentCelestialBody] || 'rgba(255,255,255,0.7)');
-                path.setAttribute('stroke-width', currentCelestialBody === 'europa-clipper' ? '3' : '2.2');
-                path.setAttribute('stroke-linecap', 'round');
-                path.setAttribute('stroke-linejoin', 'round');
-                path.setAttribute('stroke-dasharray', currentCelestialBody === 'europa-clipper' ? '10 8' : '7 7');
-                svg.appendChild(path);
-            });
-        }
-
-    </script>
-    <script src="coordinates.js">
-        function moonPhaseName(phase) {
-            const p = ((phase % 1) + 1) % 1;
-            if (p < 0.03 || p > 0.97) return 'Neumond';
-            if (p < 0.22) return 'Zunehmende Sichel';
-            if (p < 0.28) return 'Erstes Viertel';
-            if (p < 0.47) return 'Zunehmender Mond';
-            if (p < 0.53) return 'Vollmond';
-            if (p < 0.72) return 'Abnehmender Mond';
-            if (p < 0.78) return 'Letztes Viertel';
-            return 'Abnehmende Sichel';
-        }
-
-        function computeClipperStateAtTime(date, lat, lon) {
-            const position = { azimuth: 0, altitude: -90, magnitude: 15, distance: 0, velocity: 0 };
-
-            const clipperPos = interpolateCoordinate(clipperCoordinates, date);
-            const earthPos = interpolateCoordinate(earthCoordinates, date);
-
-            if (!clipperPos || !earthPos) return position;
-
-            const dx = clipperPos.x - earthPos.x;
-            const dy = clipperPos.y - earthPos.y;
-            const dz = clipperPos.z - earthPos.z;
-
-            const distanceAU = Math.sqrt(dx * dx + dy * dy + dz * dz);
-            position.distance = distanceAU * 149597870.7;
-
-            const eclipticLon = Math.atan2(dy, dx);
-            const eclipticLat = Math.asin(dz / distanceAU);
-            const obl = 23.43929 * Math.PI / 180;
-
-            const sinDec =
-                Math.sin(eclipticLat) * Math.cos(obl) +
-                Math.cos(eclipticLat) * Math.sin(obl) * Math.sin(eclipticLon);
-
-            const dec = Math.asin(sinDec);
-
-            const yRA =
-                Math.sin(eclipticLon) * Math.cos(obl) -
-                Math.tan(eclipticLat) * Math.sin(obl);
-            const xRA = Math.cos(eclipticLon);
-            const ra = (Math.atan2(yRA, xRA) * 180 / Math.PI + 360) % 360;
-
-            const jd = (date.getTime() / 86400000) + 2440587.5;
-            const T = (jd - 2451545.0) / 36525;
-            const gmst =
-                280.46061837 +
-                360.98564736629 * (jd - 2451545.0) +
-                0.000387933 * T * T -
-                (T * T * T) / 38710000;
-
-            const lst = (gmst + lon + 360) % 360;
-            const ha = (lst - ra + 360) % 360;
-
-            const latRad = lat * Math.PI / 180;
-            const haRad = ha * Math.PI / 180;
-
-            const altRad = Math.asin(
-                Math.sin(latRad) * Math.sin(dec) +
-                Math.cos(latRad) * Math.cos(dec) * Math.cos(haRad)
-            );
-
-            const azRad = Math.atan2(
-                -Math.sin(haRad) * Math.cos(dec),
-                Math.cos(latRad) * Math.sin(dec) -
-                Math.sin(latRad) * Math.cos(dec) * Math.cos(haRad)
-            );
-
-            position.azimuth = (azRad * 180 / Math.PI + 360) % 360;
-            position.altitude = altRad * 180 / Math.PI;
-
-            const prevDate = new Date(date.getTime() - 30 * 60000);
-            const nextDate = new Date(date.getTime() + 30 * 60000);
-            const prevClip = interpolateCoordinate(clipperCoordinates, prevDate);
-            const nextClip = interpolateCoordinate(clipperCoordinates, nextDate);
-
-            if (prevClip && nextClip) {
-                const ddx = nextClip.x - prevClip.x;
-                const ddy = nextClip.y - prevClip.y;
-                const ddz = nextClip.z - prevClip.z;
-                const deltaKm = Math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz) * 149597870.7;
-                position.velocity = deltaKm / 3600;
-            }
-
-            return position;
-        }
-
-        function getBodyPositionAtTime(bodyKey, date) {
-            if (!userLocation.lat || !userLocation.lon) return null;
-
-            switch (bodyKey) {
-                case 'sun': {
-                    const p = SunCalc.getPosition(date, userLocation.lat, userLocation.lon);
-                    return {
-                        azimuth: ((p.azimuth * 180 / Math.PI) + 180) % 360,
-                        altitude: p.altitude * 180 / Math.PI
-                    };
-                }
-                case 'moon': {
-                    const p = SunCalc.getMoonPosition(date, userLocation.lat, userLocation.lon);
-                    return {
-                        azimuth: ((p.azimuth * 180 / Math.PI) + 180) % 360,
-                        altitude: p.altitude * 180 / Math.PI
-                    };
-                }
-                case 'mercury':
-                case 'venus':
-                case 'mars':
-                case 'jupiter':
-                case 'saturn':
-                case 'uranus':
-                case 'neptune':
-                    return calculatePlanetPositionAdvanced(bodyKey, date, userLocation.lat, userLocation.lon);
-                case 'europa-clipper':
-                    return computeClipperStateAtTime(date, userLocation.lat, userLocation.lon);
-                default:
-                    return null;
-            }
-        }
-
-        function interpolateZeroCrossing(t1, a1, t2, a2) {
-            const ratio = (0 - a1) / (a2 - a1);
-            return new Date(t1.getTime() + ratio * (t2.getTime() - t1.getTime()));
-        }
-
-        function calculateRiseSetForBody(bodyKey, baseDate = new Date()) {
-            const start = new Date(baseDate.getTime() - 12 * 3600000);
-            const end = new Date(baseDate.getTime() + 12 * 3600000);
-            const stepMs = 5 * 60000;
-
-            let rise = null;
-            let set = null;
-
-            let prevTime = start;
-            let prevPos = getBodyPositionAtTime(bodyKey, prevTime);
-            if (!prevPos) return { rise: null, set: null };
-
-            for (let t = start.getTime() + stepMs; t <= end.getTime(); t += stepMs) {
-                const currentTime = new Date(t);
-                const currentPos = getBodyPositionAtTime(bodyKey, currentTime);
-                if (!currentPos) continue;
-
-                if (rise === null && prevPos.altitude < 0 && currentPos.altitude >= 0) {
-                    rise = interpolateZeroCrossing(prevTime, prevPos.altitude, currentTime, currentPos.altitude);
-                }
-
-                if (set === null && prevPos.altitude >= 0 && currentPos.altitude < 0) {
-                    set = interpolateZeroCrossing(prevTime, prevPos.altitude, currentTime, currentPos.altitude);
-                }
-
-                prevTime = currentTime;
-                prevPos = currentPos;
-            }
-
-            return { rise, set };
-        }
-
-        function toggleCalibration() {
-            if (!userLocation.lat || !userLocation.lon) return;
-
-            if (!isCalibrating) {
-                startCalibration();
-            } else {
-                finishCalibration();
-            }
-        }
-
-        function startCalibration() {
-            isCalibrating = true;
-            const btn = document.getElementById('calibrate-btn');
-            if (btn) {
-                btn.innerHTML = '🎯<br>fix';
-                btn.classList.add('calibrating');
-            }
-        }
-
-        function finishCalibration() {
-            const celestialPos = getCurrentCelestialPosition();
-            if (!celestialPos) return;
-
-            calibrationOffset = (celestialPos.azimuth - deviceOrientation.azimuth + 360) % 360;
-            isCalibrating = false;
-
-            const btn = document.getElementById('calibrate-btn');
-            const resetBtn = document.getElementById('reset-cal-btn');
-
-            if (btn) {
-                btn.innerHTML = '✅<br>ok';
-                btn.classList.remove('calibrating');
-            }
-
-            if (resetBtn) {
-                resetBtn.style.display = 'flex';
-            }
-
-            setTimeout(() => {
-                const body = celestialBodies[currentCelestialBody];
-                if (btn) {
-                    btn.innerHTML = body ? `${body.symbol}<br>kal.` : '🎯<br>kal.';
-                }
-            }, 1500);
-
-            updateRealtimeCelestialPositions();
-            updateCelestialInViewport();
-            updateCompassRose();
-        }
-
-        function resetCalibration() {
-            calibrationOffset = 0;
-            isCalibrating = false;
-
-            const resetBtn = document.getElementById('reset-cal-btn');
-            const calBtn = document.getElementById('calibrate-btn');
-
-            if (resetBtn) resetBtn.style.display = 'none';
-
-            if (calBtn) {
-                const body = celestialBodies[currentCelestialBody];
-                calBtn.innerHTML = body ? `${body.symbol}<br>kal.` : '🎯<br>kal.';
-                calBtn.classList.remove('calibrating');
-            }
-
-            updateRealtimeCelestialPositions();
-            updateCelestialInViewport();
-            updateCompassRose();
-        }
-
-        async function updateRealtimeCelestialPositions() {
-            if (!userLocation.lat || !userLocation.lon) return;
-
-            const now = new Date();
-
-            sunPosition = getBodyPositionAtTime('sun', now) || { azimuth: 0, altitude: -90 };
-            moonPosition = getBodyPositionAtTime('moon', now) || { azimuth: 0, altitude: -90 };
-
-            mercuryPosition = getBodyPositionAtTime('mercury', now) || { azimuth: 0, altitude: -90, magnitude: 0, distance: 0 };
-            venusPosition = getBodyPositionAtTime('venus', now) || { azimuth: 0, altitude: -90, magnitude: 0, distance: 0 };
-            marsPosition = getBodyPositionAtTime('mars', now) || { azimuth: 0, altitude: -90, magnitude: 0, distance: 0 };
-            jupiterPosition = getBodyPositionAtTime('jupiter', now) || { azimuth: 0, altitude: -90, magnitude: 0, distance: 0 };
-            saturnPosition = getBodyPositionAtTime('saturn', now) || { azimuth: 0, altitude: -90, magnitude: 0, distance: 0 };
-            uranusPosition = getBodyPositionAtTime('uranus', now) || { azimuth: 0, altitude: -90, magnitude: 0, distance: 0 };
-            neptunePosition = getBodyPositionAtTime('neptune', now) || { azimuth: 0, altitude: -90, magnitude: 0, distance: 0 };
-            europaClipperPosition = getBodyPositionAtTime('europa-clipper', now) || { azimuth: 0, altitude: -90, magnitude: 0, distance: 0, velocity: 0 };
-
-            updateRealtimeInfo();
-            updateCelestialInViewport();
-            updateStarsDisplay();
-            updateCompassRose();
-            drawCelestialPathInFOV();
-        }
-
-        function updateRealtimeInfo() {
-            if (!userLocation.lat || !userLocation.lon) return;
-
-            const now = new Date();
-            const celestialPos = getCurrentCelestialPosition();
-            if (!celestialPos) return;
-
-            const title = document.getElementById('info-title');
-            const riseLabel = document.getElementById('rise-label');
-            const setLabel = document.getElementById('set-label');
-
-            const phaseRow = document.getElementById('phase-row');
-            const magnitudeRow = document.getElementById('magnitude-row');
-            const distanceRow = document.getElementById('distance-row');
-            const velocityRow = document.getElementById('velocity-row');
-            const riseSetRow = document.getElementById('rise-set-row');
-            const setRow = document.getElementById('set-row');
-
-            const body = celestialBodies[currentCelestialBody];
-            if (body && title && riseLabel && setLabel) {
-                let dName = body.name;
-                if (dName === 'Europa Clipper') dName = 'Clipper';
-                title.textContent = `${body.symbol} ${dName} Info`;
-                riseLabel.textContent = `${dName} Aufg.:`;
-                setLabel.textContent = `${dName} Untg.:`;
-            }
-
-            if (phaseRow) phaseRow.style.display = currentCelestialBody === 'moon' ? 'flex' : 'none';
-            if (magnitudeRow) magnitudeRow.style.display = !['sun', 'moon', 'europa-clipper'].includes(currentCelestialBody) ? 'flex' : 'none';
-            if (distanceRow) distanceRow.style.display = !['sun', 'moon'].includes(currentCelestialBody) ? 'flex' : 'none';
-            if (velocityRow) velocityRow.style.display = currentCelestialBody === 'europa-clipper' ? 'flex' : 'none';
-            if (riseSetRow) riseSetRow.style.display = 'flex';
-            if (setRow) setRow.style.display = 'flex';
-
-            document.getElementById('current-time').textContent = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            document.getElementById('celestial-azimuth').textContent = `${celestialPos.azimuth.toFixed(1)}°`;
-            document.getElementById('celestial-elevation').textContent = `${celestialPos.altitude.toFixed(1)}°`;
-
-            const celestialInView = isInFieldOfView(celestialPos.azimuth, celestialPos.altitude);
-            const inViewElement = document.getElementById('celestial-in-view');
-            if (inViewElement) {
-                inViewElement.textContent = celestialInView ? 'JA' : 'NEIN';
-                inViewElement.style.color = celestialInView ? '#4CAF50' : '#f44336';
-            }
-
-            const riseSet = calculateRiseSetForBody(currentCelestialBody, now);
-            document.getElementById('rise-time').textContent = riseSet.rise
-                ? riseSet.rise.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
-                : '--:--';
-
-            document.getElementById('set-time').textContent = riseSet.set
-                ? riseSet.set.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
-                : '--:--';
-
-            if (currentCelestialBody === 'moon') {
-                const illum = SunCalc.getMoonIllumination(now);
-                const phaseName = moonPhaseName(illum.phase);
-                const moonPhaseEl = document.getElementById('moon-phase');
-                if (moonPhaseEl) moonPhaseEl.textContent = phaseName;
-            }
-
-            const magEl = document.getElementById('magnitude');
-            if (magEl) {
-                magEl.textContent =
-                    (celestialPos.magnitude !== undefined && currentCelestialBody !== 'europa-clipper')
-                        ? `${celestialPos.magnitude.toFixed(1)}m`
-                        : '--';
-            }
-
-            const distEl = document.getElementById('distance');
-            if (distEl) {
-                if (currentCelestialBody === 'europa-clipper') {
-                    distEl.textContent = `${Math.round(celestialPos.distance).toLocaleString('de-DE')} km`;
-                } else if (celestialPos.distance !== undefined) {
-                    distEl.textContent = `${celestialPos.distance.toFixed(2)} AE`;
-                } else {
-                    distEl.textContent = '--';
-                }
-            }
-
-            const velEl = document.getElementById('velocity');
-            if (velEl) {
-                velEl.textContent =
-                    (celestialPos.velocity !== undefined)
-                        ? `${celestialPos.velocity.toFixed(1)} km/s`
-                        : '--';
-            }
-        }
-
-        function updateCompassRose() {
-            const compassRose = document.getElementById('compass-rose');
-            if (!compassRose) return;
-
-            let html = '';
-            compassDirections.forEach(dir => {
-                const diff = Math.abs(getShortestAngle(deviceOrientation.azimuth, dir.azimuth));
-                const isActive = diff < 22.5;
-                html += `<div class="compass-point ${isActive ? 'active' : ''}">${dir.name}</div>`;
-            });
-
-            compassRose.innerHTML = html;
-        }
-
-        function drawCelestialPathInFOV() {
-            const svg = document.getElementById('celestial-path');
-            if (!svg || !userLocation.lat || !userLocation.lon) return;
-
-            svg.innerHTML = '';
-
-            const width = window.innerWidth;
-            const height = window.innerHeight;
-            const fovHalf = viewConfig.fieldOfView / 2;
-
-            const now = new Date();
-            const start = new Date(now.getTime() - 12 * 3600000);
-            const end = new Date(now.getTime() + 12 * 3600000);
-            const stepMs = (currentCelestialBody === 'sun' || currentCelestialBody === 'moon') ? 5 * 60000 : 10 * 60000;
-
-            const colors = {
-                'sun': 'rgba(255, 180, 0, 0.75)',
-                'moon': 'rgba(200, 200, 255, 0.75)',
-                'mercury': 'rgba(140, 120, 83, 0.75)',
-                'venus': 'rgba(255, 198, 73, 0.75)',
-                'mars': 'rgba(255, 100, 100, 0.75)',
-                'jupiter': 'rgba(255, 200, 100, 0.75)',
-                'saturn': 'rgba(250, 178, 123, 0.75)',
-                'uranus': 'rgba(79, 208, 231, 0.75)',
-                'neptune': 'rgba(75, 112, 221, 0.75)',
-                'europa-clipper': 'rgba(100, 255, 255, 0.85)'
-            };
-
-            const segments = [];
-            let currentSegment = [];
-
-            for (let t = start.getTime(); t <= end.getTime(); t += stepMs) {
-                const testTime = new Date(t);
-                const pos = getBodyPositionAtTime(currentCelestialBody, testTime);
-                if (!pos) continue;
-
-                const azimuthDiff = getShortestAngle(deviceOrientation.azimuth, pos.azimuth);
-                const altitudeDiff = pos.altitude - deviceOrientation.pitch;
-
-                const inView = Math.abs(azimuthDiff) <= fovHalf && Math.abs(altitudeDiff) <= fovHalf;
-
-                if (!inView) {
-                    if (currentSegment.length > 1) segments.push(currentSegment);
-                    currentSegment = [];
-                    continue;
-                }
-
-                const x = (azimuthDiff / fovHalf) * (width / 2) + width / 2;
-                const y = (-altitudeDiff / fovHalf) * (height / 2) + height / 2;
-
-                const prev = currentSegment[currentSegment.length - 1];
-                if (prev) {
-                    const jump = Math.hypot(x - prev.x, y - prev.y);
-                    if (jump > width * 0.35) {
-                        if (currentSegment.length > 1) segments.push(currentSegment);
-                        currentSegment = [];
-                    }
-                }
-
-                currentSegment.push({ x, y });
-            }
-
-            if (currentSegment.length > 1) segments.push(currentSegment);
-
-            segments.forEach(points => {
-                const pathData = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
-                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                path.setAttribute('d', pathData);
-                path.setAttribute('fill', 'none');
-                path.setAttribute('stroke', colors[currentCelestialBody] || 'rgba(255,255,255,0.7)');
-                path.setAttribute('stroke-width', currentCelestialBody === 'europa-clipper' ? '3' : '2.2');
-                path.setAttribute('stroke-linecap', 'round');
-                path.setAttribute('stroke-linejoin', 'round');
-                path.setAttribute('stroke-dasharray', currentCelestialBody === 'europa-clipper' ? '10 8' : '7 7');
-                svg.appendChild(path);
-            });
-        }
-
-    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/suncalc/1.9.0/suncalc.min.js"></script>
+    <script src="coordinates.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
@@ -1588,12 +722,15 @@
     <!-- Sensors Readout Button -->
     <button id="sensors-btn" onclick="togglePanel('sensors-readout-panel')" title="Sensoren" style="position: fixed; bottom: 20px; left: 140px; background: #333; color: #00f3ff; border: 1px solid #00f3ff; padding: 12px; border-radius: 50%; font-size: 1.2em; cursor: pointer; z-index: 1000; width: 50px; height: 50px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;">📱</button>
 
+    
     <!-- Info-Button -->
     <button id="app-info-btn" onclick="togglePanel('app-info-panel')" title="Informationen" style="position: fixed; bottom: 20px; right: 140px; background: #333; color: #ffb400; border: 1px solid #ffb400; padding: 12px; border-radius: 50%; font-size: 1.2em; font-weight: bold; cursor: pointer; z-index: 1000; width: 50px; height: 50px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; line-height: 1;">ℹ️</button>
 
-
     <!-- Reset Calibration Button -->
     <button id="reset-cal-btn" onclick="resetCalibration()" title="Kalibrierung zurücksetzen" style="display: none; position: fixed; bottom: 20px; right: 80px; background: #ff3333; color: #fff; border: none; padding: 12px; border-radius: 50%; font-size: 1.2em; font-weight: bold; cursor: pointer; z-index: 1000; width: 50px; height: 50px; box-shadow: 0 4px 15px rgba(255, 51, 51, 0.4); justify-content: center; align-items: center;">↺</button>
+
+    
+    
     <!-- Info Panel -->
     <div id="app-info-panel" class="panel minimized" style="top: 200px; right: 20px; width: 300px; text-align: left; font-size: 0.9em; line-height: 1.5;">
         <div class="panel-header">
@@ -1611,8 +748,6 @@
         </div>
     </div>
 
-
-    
     <!-- Sensor-Panel -->
     <div id="settings-panel" class="panel minimized">
         <div class="panel-header">
@@ -2607,7 +1742,48 @@ setInterval(() => {
             }, updateIntervalMs);
         }
 
-        async 
+        async function updateRealtimeCelestialPositions() {
+            if (!userLocation.lat || !userLocation.lon) return;
+            
+            const now = new Date();
+            
+            // **NUR LOKALE BERECHNUNGEN (NASA API deaktiviert aufgrund CORS-Problemen)**
+            const sunPos = SunCalc.getPosition(now, userLocation.lat, userLocation.lon);
+            const sunTimes = SunCalc.getTimes(now, userLocation.lat, userLocation.lon);
+            
+            sunPosition.azimuth = ((sunPos.azimuth * 180 / Math.PI) + 180) % 360;
+            sunPosition.altitude = sunPos.altitude * 180 / Math.PI;
+            
+            const moonPos = SunCalc.getMoonPosition(now, userLocation.lat, userLocation.lon);
+            const moonTimes = SunCalc.getMoonTimes(now, userLocation.lat, userLocation.lon);
+            const moonIllumination = SunCalc.getMoonIllumination(now);
+            
+            moonPosition.azimuth = ((moonPos.azimuth * 180 / Math.PI) + 180) % 360;
+            moonPosition.altitude = moonPos.altitude * 180 / Math.PI;
+            
+            // **ALLE PLANETEN BERECHNEN**
+            for (const body of ['mercury', 'venus', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune', 'europa-clipper']) {
+                const local = calculatePlanetPositionAdvanced(body, now, userLocation.lat, userLocation.lon);
+                switch(body) {
+                    case 'mercury': mercuryPosition = local; break;
+                    case 'venus': venusPosition = local; break;
+                    case 'mars': marsPosition = local; break;
+                    case 'jupiter': jupiterPosition = local; break;
+                    case 'saturn': saturnPosition = local; break;
+                    case 'uranus': uranusPosition = local; break;
+                    case 'neptune': neptunePosition = local; break;
+                    case 'europa-clipper': europaClipperPosition = local; break;
+                }
+            }
+            
+            updateCelestialInViewport();
+            updateStarsDisplay();
+            updateRealtimeInfo(now, sunTimes, moonTimes, moonIllumination);
+            
+            if (viewConfig.showPathInFOV) {
+                drawCelestialPathInFOV();
+            }
+        }
 
         // ===== ALLE HIMMELSKÖRPER GLEICHZEITIG ANZEIGEN MIT KLEINEREN GRÖSSEN =====
         function updateCelestialInViewport() {
@@ -2633,39 +1809,43 @@ setInterval(() => {
                         if (x >= 0 && x <= window.innerWidth && y >= 0 && y <= window.innerHeight) {
                             const isVisible = bodyPos.altitude > -5;
                             const baseSize = getBodySize(bodyKey, isVisible) * celestialConfig.size;
-                            
+
                             // **HERVORHEBUNG FÜR AUSGEWÄHLTEN HIMMELSKÖRPER**
                             const isSelected = bodyKey === currentCelestialBody;
-                            const size = isSelected ? baseSize * 1.3 : baseSize;
-                            const alpha = isSelected ? (isVisible ? 0.95 : 0.6) : (isVisible ? 0.7 : 0.4);
-                            
+                            const size = isSelected ? baseSize * 1.65 : baseSize;
+                            const alpha = isSelected ? (isVisible ? 1.0 : 0.75) : (isVisible ? 0.72 : 0.42);
+
                             ctx.save();
                             ctx.shadowColor = body.shadowColor;
-                            ctx.shadowBlur = isVisible ? (isSelected ? 30 : 20) : (isSelected ? 20 : 10);
-                            
-                            // **HIMMELSKÖRPER-KREIS**
+                            ctx.shadowBlur = isVisible ? (isSelected ? 38 : 20) : (isSelected ? 24 : 10);
+
                             ctx.beginPath();
                             ctx.arc(x, y, size, 0, 2 * Math.PI);
-                            ctx.fillStyle = body.color.replace(')', `, ${alpha})`).replace('rgb', 'rgba');
+                            ctx.fillStyle = body.color;
+                            ctx.globalAlpha = alpha;
                             ctx.fill();
-                            
-                            // **SYMBOL**
+
+                            ctx.globalAlpha = 1;
                             ctx.fillStyle = isVisible ? '#fff' : '#ccc';
-                            ctx.font = `bold ${size * 0.8}px Arial`;
+                            ctx.font = `bold ${size * 0.85}px Arial`;
                             ctx.textAlign = 'center';
-                            ctx.fillText(body.symbol, x, y + (size * 0.3));
-                            
-                            // **AUSWAHLRING FÜR AKTIVEN HIMMELSKÖRPER**
-                            if (isSelected && isVisible) {
-                                ctx.strokeStyle = body.color.replace(')', ', 0.8)').replace('rgb', 'rgba');
+                            ctx.fillText(body.symbol, x, y + (size * 0.28));
+
+                            if (isSelected) {
+                                ctx.strokeStyle = '#ffffff';
                                 ctx.lineWidth = 3;
-                                for (let i = 1; i <= 2; i++) {
-                                    ctx.beginPath();
-                                    ctx.arc(x, y, size + (i * 12), 0, 2 * Math.PI);
-                                    ctx.stroke();
-                                }
+                                ctx.beginPath();
+                                ctx.arc(x, y, size + 10, 0, 2 * Math.PI);
+                                ctx.stroke();
+
+                                ctx.strokeStyle = body.shadowColor;
+                                ctx.lineWidth = 4;
+                                ctx.globalAlpha = 0.9;
+                                ctx.beginPath();
+                                ctx.arc(x, y, size + 18, 0, 2 * Math.PI);
+                                ctx.stroke();
                             }
-                            
+
                             ctx.restore();
                         }
                     }
@@ -2710,7 +1890,64 @@ setInterval(() => {
             }
         }
 
-        
+        function updateRealtimeInfo(now = new Date(), sunTimes = null, moonTimes = null, moonIllumination = null) {
+            if (!sunTimes && userLocation.lat && userLocation.lon) {
+                sunTimes = SunCalc.getTimes(now, userLocation.lat, userLocation.lon);
+                moonTimes = SunCalc.getMoonTimes(now, userLocation.lat, userLocation.lon);
+                moonIllumination = SunCalc.getMoonIllumination(now);
+            }
+            
+            const celestialPos = getCurrentCelestialPosition();
+            
+            document.getElementById('current-time').textContent = now.toLocaleTimeString('de-DE');
+            document.getElementById('celestial-azimuth').textContent = celestialPos.azimuth.toFixed(1) + '°';
+            document.getElementById('celestial-elevation').textContent = celestialPos.altitude.toFixed(1) + '°';
+            
+            if (currentCelestialBody === 'sun' && sunTimes) {
+                document.getElementById('rise-time').textContent = sunTimes.sunrise ? 
+                    sunTimes.sunrise.toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}) : '--:--';
+                document.getElementById('set-time').textContent = sunTimes.sunset ? 
+                    sunTimes.sunset.toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}) : '--:--';
+            } else if (currentCelestialBody === 'moon' && moonTimes) {
+                document.getElementById('rise-time').textContent = moonTimes.rise ? 
+                    moonTimes.rise.toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}) : '--:--';
+                document.getElementById('set-time').textContent = moonTimes.set ? 
+                    moonTimes.set.toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}) : '--:--';
+                
+                if (moonIllumination) {
+                    const phase = moonIllumination.phase;
+                    let phaseName = '';
+                    if (phase < 0.1) phaseName = '🌑 Neumond';
+                    else if (phase < 0.25) phaseName = '🌒 Zunehmend';
+                    else if (phase < 0.35) phaseName = '🌓 Erstes Viertel';
+                    else if (phase < 0.65) phaseName = '🌔 Zunehmend';
+                    else if (phase < 0.75) phaseName = '🌕 Vollmond';
+                    else if (phase < 0.9) phaseName = '🌖 Abnehmend';
+                    else phaseName = '🌗 Letztes Viertel';
+                    
+                    document.getElementById('moon-phase').textContent = phaseName;
+                }
+            } else {
+                document.getElementById('rise-time').textContent = '--:--';
+                document.getElementById('set-time').textContent = '--:--';
+            }
+            
+            if (!['sun', 'moon'].includes(currentCelestialBody)) {
+                if (celestialPos.magnitude !== undefined) {
+                    document.getElementById('magnitude').textContent = celestialPos.magnitude.toFixed(1) + 'm';
+                }
+                if (celestialPos.distance !== undefined) {
+                    if (currentCelestialBody === 'europa-clipper') {
+                        document.getElementById('distance').textContent = (celestialPos.distance).toFixed(0) + ' km';
+                    } else {
+                        document.getElementById('distance').textContent = celestialPos.distance.toFixed(2) + ' AE';
+                    }
+                }
+                if (currentCelestialBody === 'europa-clipper' && celestialPos.velocity !== undefined) {
+                    document.getElementById('velocity').textContent = Math.abs(celestialPos.velocity).toFixed(1) + ' km/s';
+                }
+            }
+        }
 
         // ===== ECHTZEIT-SENSOR-UPDATES UND "IM SICHTFELD" =====
         function updateSensorMini() {
@@ -3214,43 +2451,53 @@ let orientationSensor = null;
 
         // ===== WEITERE FUNKTIONEN (KALIBRIERUNG, KAMERA, UI, ETC.) =====
         
+        function resetCalibration() {
+            calibrationOffset = 0;
+            isCalibrating = false;
 
-        
+            const resetBtn = document.getElementById('reset-cal-btn');
+            const calBtn = document.getElementById('calibrate-btn');
 
-        
-
-        async function initializeCamera() {
-            try {
-                if (cameraStream) {
-                    cameraStream.getTracks().forEach(track => track.stop());
-                    cameraStream = null;
-                }
-                
-                cameraStream = await navigator.mediaDevices.getUserMedia({
-                    video: { 
-                        facingMode: 'environment',
-                        width: { ideal: 1920 },
-                        height: { ideal: 1080 }
-                    },
-                    audio: false
-                });
-                
-                const cameraElement = document.getElementById('camera-stream');
-                cameraElement.srcObject = cameraStream;
-                
-                cameraStream.getTracks().forEach(track => {
-                    track.addEventListener('ended', () => {
-                        cameraEnabled = false;
-                        updateCameraStatus();
-                    });
-                });
-                
-                updateCameraStatus();
-            } catch (error) {
-                console.error('Kamera-Zugriff fehlgeschlagen:', error);
-                cameraEnabled = false;
-                updateCameraStatus();
+            if (resetBtn) resetBtn.style.display = 'none';
+            if (calBtn) {
+                const body = celestialBodies[currentCelestialBody];
+                calBtn.innerHTML = body ? `${body.symbol}<br>kal.` : '🎯<br>kal.';
+                calBtn.classList.remove('calibrating');
             }
+
+            updateRealtimeCelestialPositions();
+            updateCelestialInViewport();
+            updateCompassRose();
+        }
+
+        function startCalibration() {
+            isCalibrating = true;
+            const btn = document.getElementById('calibrate-btn');
+            btn.innerHTML = '🎯<br>kal.';
+            btn.classList.add('calibrating');
+        }
+
+        function finishCalibration() {
+            const celestialPos = getCurrentCelestialPosition();
+            calibrationOffset = (celestialPos.azimuth - deviceOrientation.azimuth + 360) % 360;
+
+            isCalibrating = false;
+            const btn = document.getElementById('calibrate-btn');
+            const resetBtn = document.getElementById('reset-cal-btn');
+
+            btn.innerHTML = '✅<br>ok';
+            btn.classList.remove('calibrating');
+
+            if (resetBtn) {
+                resetBtn.style.display = 'flex';
+            }
+
+            setTimeout(() => {
+                const body = celestialBodies[currentCelestialBody];
+                if (body) {
+                    btn.innerHTML = `${body.symbol}<br>kal.`;
+                }
+            }, 2000);
         }
 
         function toggleCamera() {
@@ -3335,7 +2582,19 @@ let orientationSensor = null;
             }
         }
 
-        
+        function updateCompassRose() {
+            const compassRose = document.getElementById('compass-rose');
+            let html = '';
+
+            compassDirections.forEach(dir => {
+                const diff = Math.abs(getShortestAngle(deviceOrientation.azimuth, dir.azimuth));
+                const isActive = diff < 22.5;
+
+                html += `<div class="compass-point ${isActive ? 'active' : ''}">${dir.name}</div>`;
+            });
+
+            compassRose.innerHTML = html;
+        }
 
         function updateDebugDisplay(event, values) {
             const debugDiv = document.getElementById('debug-values');
@@ -3388,6 +2647,9 @@ let orientationSensor = null;
             }
         }
         function setupPanels() {
+            const infoPanel = document.getElementById('app-info-panel');
+            if (infoPanel) infoPanel.classList.add('minimized');
+
             const settingsPanel = document.getElementById('settings-panel');
             if (settingsPanel) settingsPanel.classList.add('minimized');
 
@@ -3420,440 +2682,152 @@ let orientationSensor = null;
         }
 
         // ===== HIMMELSKÖRPER-LAUFBAHN IM SICHTFELD =====
-        
-    
-        function moonPhaseName(phase) {
-            const p = ((phase % 1) + 1) % 1;
-            if (p < 0.03 || p > 0.97) return 'Neumond';
-            if (p < 0.22) return 'Zunehmende Sichel';
-            if (p < 0.28) return 'Erstes Viertel';
-            if (p < 0.47) return 'Zunehmender Mond';
-            if (p < 0.53) return 'Vollmond';
-            if (p < 0.72) return 'Abnehmender Mond';
-            if (p < 0.78) return 'Letztes Viertel';
-            return 'Abnehmende Sichel';
-        }
-
-        function computeClipperStateAtTime(date, lat, lon) {
-            const position = { azimuth: 0, altitude: -90, magnitude: 15, distance: 0, velocity: 0 };
-
-            const clipperPos = interpolateCoordinate(clipperCoordinates, date);
-            const earthPos = interpolateCoordinate(earthCoordinates, date);
-
-            if (!clipperPos || !earthPos) return position;
-
-            const dx = clipperPos.x - earthPos.x;
-            const dy = clipperPos.y - earthPos.y;
-            const dz = clipperPos.z - earthPos.z;
-
-            const distanceAU = Math.sqrt(dx * dx + dy * dy + dz * dz);
-            position.distance = distanceAU * 149597870.7;
-
-            const eclipticLon = Math.atan2(dy, dx);
-            const eclipticLat = Math.asin(dz / distanceAU);
-            const obl = 23.43929 * Math.PI / 180;
-
-            const sinDec =
-                Math.sin(eclipticLat) * Math.cos(obl) +
-                Math.cos(eclipticLat) * Math.sin(obl) * Math.sin(eclipticLon);
-
-            const dec = Math.asin(sinDec);
-
-            const yRA =
-                Math.sin(eclipticLon) * Math.cos(obl) -
-                Math.tan(eclipticLat) * Math.sin(obl);
-            const xRA = Math.cos(eclipticLon);
-            const ra = (Math.atan2(yRA, xRA) * 180 / Math.PI + 360) % 360;
-
-            const jd = (date.getTime() / 86400000) + 2440587.5;
-            const T = (jd - 2451545.0) / 36525;
-            const gmst =
-                280.46061837 +
-                360.98564736629 * (jd - 2451545.0) +
-                0.000387933 * T * T -
-                (T * T * T) / 38710000;
-
-            const lst = (gmst + lon + 360) % 360;
-            const ha = (lst - ra + 360) % 360;
-
-            const latRad = lat * Math.PI / 180;
-            const haRad = ha * Math.PI / 180;
-
-            const altRad = Math.asin(
-                Math.sin(latRad) * Math.sin(dec) +
-                Math.cos(latRad) * Math.cos(dec) * Math.cos(haRad)
-            );
-
-            const azRad = Math.atan2(
-                -Math.sin(haRad) * Math.cos(dec),
-                Math.cos(latRad) * Math.sin(dec) -
-                Math.sin(latRad) * Math.cos(dec) * Math.cos(haRad)
-            );
-
-            position.azimuth = (azRad * 180 / Math.PI + 360) % 360;
-            position.altitude = altRad * 180 / Math.PI;
-
-            const prevDate = new Date(date.getTime() - 30 * 60000);
-            const nextDate = new Date(date.getTime() + 30 * 60000);
-            const prevClip = interpolateCoordinate(clipperCoordinates, prevDate);
-            const nextClip = interpolateCoordinate(clipperCoordinates, nextDate);
-
-            if (prevClip && nextClip) {
-                const ddx = nextClip.x - prevClip.x;
-                const ddy = nextClip.y - prevClip.y;
-                const ddz = nextClip.z - prevClip.z;
-                const deltaKm = Math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz) * 149597870.7;
-                position.velocity = deltaKm / 3600;
-            }
-
-            return position;
-        }
-
-        function getBodyPositionAtTime(bodyKey, date) {
-            if (!userLocation.lat || !userLocation.lon) return null;
-
-            switch (bodyKey) {
-                case 'sun': {
-                    const p = SunCalc.getPosition(date, userLocation.lat, userLocation.lon);
-                    return {
-                        azimuth: ((p.azimuth * 180 / Math.PI) + 180) % 360,
-                        altitude: p.altitude * 180 / Math.PI
-                    };
-                }
-                case 'moon': {
-                    const p = SunCalc.getMoonPosition(date, userLocation.lat, userLocation.lon);
-                    return {
-                        azimuth: ((p.azimuth * 180 / Math.PI) + 180) % 360,
-                        altitude: p.altitude * 180 / Math.PI
-                    };
-                }
-                case 'mercury':
-                case 'venus':
-                case 'mars':
-                case 'jupiter':
-                case 'saturn':
-                case 'uranus':
-                case 'neptune':
-                    return calculatePlanetPositionAdvanced(bodyKey, date, userLocation.lat, userLocation.lon);
-                case 'europa-clipper':
-                    return computeClipperStateAtTime(date, userLocation.lat, userLocation.lon);
-                default:
-                    return null;
-            }
-        }
-
-        function interpolateZeroCrossing(t1, a1, t2, a2) {
-            const ratio = (0 - a1) / (a2 - a1);
-            return new Date(t1.getTime() + ratio * (t2.getTime() - t1.getTime()));
-        }
-
-        function calculateRiseSetForBody(bodyKey, baseDate = new Date()) {
-            const start = new Date(baseDate.getTime() - 12 * 3600000);
-            const end = new Date(baseDate.getTime() + 12 * 3600000);
-            const stepMs = 5 * 60000;
-
-            let rise = null;
-            let set = null;
-
-            let prevTime = start;
-            let prevPos = getBodyPositionAtTime(bodyKey, prevTime);
-            if (!prevPos) return { rise: null, set: null };
-
-            for (let t = start.getTime() + stepMs; t <= end.getTime(); t += stepMs) {
-                const currentTime = new Date(t);
-                const currentPos = getBodyPositionAtTime(bodyKey, currentTime);
-                if (!currentPos) continue;
-
-                if (rise === null && prevPos.altitude < 0 && currentPos.altitude >= 0) {
-                    rise = interpolateZeroCrossing(prevTime, prevPos.altitude, currentTime, currentPos.altitude);
-                }
-
-                if (set === null && prevPos.altitude >= 0 && currentPos.altitude < 0) {
-                    set = interpolateZeroCrossing(prevTime, prevPos.altitude, currentTime, currentPos.altitude);
-                }
-
-                prevTime = currentTime;
-                prevPos = currentPos;
-            }
-
-            return { rise, set };
-        }
-
-        function toggleCalibration() {
-            if (!userLocation.lat || !userLocation.lon) return;
-
-            if (!isCalibrating) {
-                startCalibration();
-            } else {
-                finishCalibration();
-            }
-        }
-
-        function startCalibration() {
-            isCalibrating = true;
-            const btn = document.getElementById('calibrate-btn');
-            if (btn) {
-                btn.innerHTML = '🎯<br>fix';
-                btn.classList.add('calibrating');
-            }
-        }
-
-        function finishCalibration() {
-            const celestialPos = getCurrentCelestialPosition();
-            if (!celestialPos) return;
-
-            calibrationOffset = (celestialPos.azimuth - deviceOrientation.azimuth + 360) % 360;
-            isCalibrating = false;
-
-            const btn = document.getElementById('calibrate-btn');
-            const resetBtn = document.getElementById('reset-cal-btn');
-
-            if (btn) {
-                btn.innerHTML = '✅<br>ok';
-                btn.classList.remove('calibrating');
-            }
-
-            if (resetBtn) {
-                resetBtn.style.display = 'flex';
-            }
-
-            setTimeout(() => {
-                const body = celestialBodies[currentCelestialBody];
-                if (btn) {
-                    btn.innerHTML = body ? `${body.symbol}<br>kal.` : '🎯<br>kal.';
-                }
-            }, 1500);
-
-            updateRealtimeCelestialPositions();
-            updateCelestialInViewport();
-            updateCompassRose();
-        }
-
-        function resetCalibration() {
-            calibrationOffset = 0;
-            isCalibrating = false;
-
-            const resetBtn = document.getElementById('reset-cal-btn');
-            const calBtn = document.getElementById('calibrate-btn');
-
-            if (resetBtn) resetBtn.style.display = 'none';
-
-            if (calBtn) {
-                const body = celestialBodies[currentCelestialBody];
-                calBtn.innerHTML = body ? `${body.symbol}<br>kal.` : '🎯<br>kal.';
-                calBtn.classList.remove('calibrating');
-            }
-
-            updateRealtimeCelestialPositions();
-            updateCelestialInViewport();
-            updateCompassRose();
-        }
-
-        async function updateRealtimeCelestialPositions() {
-            if (!userLocation.lat || !userLocation.lon) return;
-
-            const now = new Date();
-
-            sunPosition = getBodyPositionAtTime('sun', now) || { azimuth: 0, altitude: -90 };
-            moonPosition = getBodyPositionAtTime('moon', now) || { azimuth: 0, altitude: -90 };
-
-            mercuryPosition = getBodyPositionAtTime('mercury', now) || { azimuth: 0, altitude: -90, magnitude: 0, distance: 0 };
-            venusPosition = getBodyPositionAtTime('venus', now) || { azimuth: 0, altitude: -90, magnitude: 0, distance: 0 };
-            marsPosition = getBodyPositionAtTime('mars', now) || { azimuth: 0, altitude: -90, magnitude: 0, distance: 0 };
-            jupiterPosition = getBodyPositionAtTime('jupiter', now) || { azimuth: 0, altitude: -90, magnitude: 0, distance: 0 };
-            saturnPosition = getBodyPositionAtTime('saturn', now) || { azimuth: 0, altitude: -90, magnitude: 0, distance: 0 };
-            uranusPosition = getBodyPositionAtTime('uranus', now) || { azimuth: 0, altitude: -90, magnitude: 0, distance: 0 };
-            neptunePosition = getBodyPositionAtTime('neptune', now) || { azimuth: 0, altitude: -90, magnitude: 0, distance: 0 };
-            europaClipperPosition = getBodyPositionAtTime('europa-clipper', now) || { azimuth: 0, altitude: -90, magnitude: 0, distance: 0, velocity: 0 };
-
-            updateRealtimeInfo();
-            updateCelestialInViewport();
-            updateStarsDisplay();
-            updateCompassRose();
-            drawCelestialPathInFOV();
-        }
-
-        function updateRealtimeInfo() {
-            if (!userLocation.lat || !userLocation.lon) return;
-
-            const now = new Date();
-            const celestialPos = getCurrentCelestialPosition();
-            if (!celestialPos) return;
-
-            const title = document.getElementById('info-title');
-            const riseLabel = document.getElementById('rise-label');
-            const setLabel = document.getElementById('set-label');
-
-            const phaseRow = document.getElementById('phase-row');
-            const magnitudeRow = document.getElementById('magnitude-row');
-            const distanceRow = document.getElementById('distance-row');
-            const velocityRow = document.getElementById('velocity-row');
-            const riseSetRow = document.getElementById('rise-set-row');
-            const setRow = document.getElementById('set-row');
-
-            const body = celestialBodies[currentCelestialBody];
-            if (body && title && riseLabel && setLabel) {
-                let dName = body.name;
-                if (dName === 'Europa Clipper') dName = 'Clipper';
-                title.textContent = `${body.symbol} ${dName} Info`;
-                riseLabel.textContent = `${dName} Aufg.:`;
-                setLabel.textContent = `${dName} Untg.:`;
-            }
-
-            if (phaseRow) phaseRow.style.display = currentCelestialBody === 'moon' ? 'flex' : 'none';
-            if (magnitudeRow) magnitudeRow.style.display = !['sun', 'moon', 'europa-clipper'].includes(currentCelestialBody) ? 'flex' : 'none';
-            if (distanceRow) distanceRow.style.display = !['sun', 'moon'].includes(currentCelestialBody) ? 'flex' : 'none';
-            if (velocityRow) velocityRow.style.display = currentCelestialBody === 'europa-clipper' ? 'flex' : 'none';
-            if (riseSetRow) riseSetRow.style.display = 'flex';
-            if (setRow) setRow.style.display = 'flex';
-
-            document.getElementById('current-time').textContent = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            document.getElementById('celestial-azimuth').textContent = `${celestialPos.azimuth.toFixed(1)}°`;
-            document.getElementById('celestial-elevation').textContent = `${celestialPos.altitude.toFixed(1)}°`;
-
-            const celestialInView = isInFieldOfView(celestialPos.azimuth, celestialPos.altitude);
-            const inViewElement = document.getElementById('celestial-in-view');
-            if (inViewElement) {
-                inViewElement.textContent = celestialInView ? 'JA' : 'NEIN';
-                inViewElement.style.color = celestialInView ? '#4CAF50' : '#f44336';
-            }
-
-            const riseSet = calculateRiseSetForBody(currentCelestialBody, now);
-            document.getElementById('rise-time').textContent = riseSet.rise
-                ? riseSet.rise.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
-                : '--:--';
-
-            document.getElementById('set-time').textContent = riseSet.set
-                ? riseSet.set.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
-                : '--:--';
-
-            if (currentCelestialBody === 'moon') {
-                const illum = SunCalc.getMoonIllumination(now);
-                const phaseName = moonPhaseName(illum.phase);
-                const moonPhaseEl = document.getElementById('moon-phase');
-                if (moonPhaseEl) moonPhaseEl.textContent = phaseName;
-            }
-
-            const magEl = document.getElementById('magnitude');
-            if (magEl) {
-                magEl.textContent =
-                    (celestialPos.magnitude !== undefined && currentCelestialBody !== 'europa-clipper')
-                        ? `${celestialPos.magnitude.toFixed(1)}m`
-                        : '--';
-            }
-
-            const distEl = document.getElementById('distance');
-            if (distEl) {
-                if (currentCelestialBody === 'europa-clipper') {
-                    distEl.textContent = `${Math.round(celestialPos.distance).toLocaleString('de-DE')} km`;
-                } else if (celestialPos.distance !== undefined) {
-                    distEl.textContent = `${celestialPos.distance.toFixed(2)} AE`;
-                } else {
-                    distEl.textContent = '--';
-                }
-            }
-
-            const velEl = document.getElementById('velocity');
-            if (velEl) {
-                velEl.textContent =
-                    (celestialPos.velocity !== undefined)
-                        ? `${celestialPos.velocity.toFixed(1)} km/s`
-                        : '--';
-            }
-        }
-
-        function updateCompassRose() {
-            const compassRose = document.getElementById('compass-rose');
-            if (!compassRose) return;
-
-            let html = '';
-            compassDirections.forEach(dir => {
-                const diff = Math.abs(getShortestAngle(deviceOrientation.azimuth, dir.azimuth));
-                const isActive = diff < 22.5;
-                html += `<div class="compass-point ${isActive ? 'active' : ''}">${dir.name}</div>`;
-            });
-
-            compassRose.innerHTML = html;
-        }
-
         function drawCelestialPathInFOV() {
             const svg = document.getElementById('celestial-path');
-            if (!svg || !userLocation.lat || !userLocation.lon) return;
-
             svg.innerHTML = '';
-
-            const width = window.innerWidth;
-            const height = window.innerHeight;
-            const fovHalf = viewConfig.fieldOfView / 2;
-
+            
+            if (!userLocation.lat || !userLocation.lon) return;
+            
             const now = new Date();
-            const start = new Date(now.getTime() - 12 * 3600000);
-            const end = new Date(now.getTime() + 12 * 3600000);
-            const stepMs = (currentCelestialBody === 'sun' || currentCelestialBody === 'moon') ? 5 * 60000 : 10 * 60000;
-
-            const colors = {
-                'sun': 'rgba(255, 180, 0, 0.75)',
-                'moon': 'rgba(200, 200, 255, 0.75)',
-                'mercury': 'rgba(140, 120, 83, 0.75)',
-                'venus': 'rgba(255, 198, 73, 0.75)',
-                'mars': 'rgba(255, 100, 100, 0.75)',
-                'jupiter': 'rgba(255, 200, 100, 0.75)',
-                'saturn': 'rgba(250, 178, 123, 0.75)',
-                'uranus': 'rgba(79, 208, 231, 0.75)',
-                'neptune': 'rgba(75, 112, 221, 0.75)',
-                'europa-clipper': 'rgba(100, 255, 255, 0.85)'
+            const pathPoints = [];
+            
+            const pathColors = {
+                'sun': 'rgba(255, 180, 0, 0.6)',
+                'moon': 'rgba(200, 200, 255, 0.6)',
+                'mercury': 'rgba(140, 120, 83, 0.6)',
+                'venus': 'rgba(255, 198, 73, 0.6)',
+                'mars': 'rgba(255, 100, 100, 0.6)',
+                'jupiter': 'rgba(255, 200, 100, 0.6)',
+                'saturn': 'rgba(250, 178, 123, 0.6)',
+                'uranus': 'rgba(79, 208, 231, 0.6)',
+                'neptune': 'rgba(75, 112, 221, 0.6)',
+                'europa-clipper': 'rgba(100, 255, 255, 0.6)'
             };
-
-            const segments = [];
-            let currentSegment = [];
-
-            for (let t = start.getTime(); t <= end.getTime(); t += stepMs) {
-                const testTime = new Date(t);
-                const pos = getBodyPositionAtTime(currentCelestialBody, testTime);
-                if (!pos) continue;
-
-                const azimuthDiff = getShortestAngle(deviceOrientation.azimuth, pos.azimuth);
-                const altitudeDiff = pos.altitude - deviceOrientation.pitch;
-
-                const inView = Math.abs(azimuthDiff) <= fovHalf && Math.abs(altitudeDiff) <= fovHalf;
-
-                if (!inView) {
-                    if (currentSegment.length > 1) segments.push(currentSegment);
-                    currentSegment = [];
-                    continue;
+            
+            let timeStep, maxHours;
+            switch(currentCelestialBody) {
+                case 'sun':
+                case 'moon':
+                    timeStep = 0.5;
+                    maxHours = 24;
+                    break;
+                case 'mercury':
+                case 'venus':
+                    timeStep = 1;
+                    maxHours = 24;
+                    break;
+                case 'mars':
+                    timeStep = 2;
+                    maxHours = 48;
+                    break;
+                case 'jupiter':
+                case 'saturn':
+                    timeStep = 4;
+                    maxHours = 72;
+                    break;
+                case 'uranus':
+                case 'neptune':
+                    timeStep = 6;
+                    maxHours = 96;
+                    break;
+                case 'europa-clipper':
+                    timeStep = 1;
+                    maxHours = 24;
+                    break;
+            }
+            
+            for (let hour = 0; hour <= maxHours; hour += timeStep) {
+                const testTime = new Date(now.getTime() + (hour - 12) * 3600000);
+                
+                let azimuth, altitude;
+                if (currentCelestialBody === 'sun') {
+                    const sunPos = SunCalc.getPosition(testTime, userLocation.lat, userLocation.lon);
+                    azimuth = ((sunPos.azimuth * 180 / Math.PI) + 180) % 360;
+                    altitude = sunPos.altitude * 180 / Math.PI;
+                } else if (currentCelestialBody === 'moon') {
+                    const moonPos = SunCalc.getMoonPosition(testTime, userLocation.lat, userLocation.lon);
+                    azimuth = ((moonPos.azimuth * 180 / Math.PI) + 180) % 360;
+                    altitude = moonPos.altitude * 180 / Math.PI;
+                } else {
+                    const planetPos = calculatePlanetPositionAdvanced(currentCelestialBody, testTime, userLocation.lat, userLocation.lon);
+                    azimuth = planetPos.azimuth;
+                    altitude = planetPos.altitude;
                 }
-
-                const x = (azimuthDiff / fovHalf) * (width / 2) + width / 2;
-                const y = (-altitudeDiff / fovHalf) * (height / 2) + height / 2;
-
-                const prev = currentSegment[currentSegment.length - 1];
-                if (prev) {
-                    const jump = Math.hypot(x - prev.x, y - prev.y);
-                    if (jump > width * 0.35) {
-                        if (currentSegment.length > 1) segments.push(currentSegment);
-                        currentSegment = [];
+                
+                if (isInFieldOfView(azimuth, altitude) && altitude > -15) {
+                    const azimuthDiff = getShortestAngle(deviceOrientation.azimuth, azimuth);
+                    const altitudeDiff = altitude - deviceOrientation.pitch;
+                    
+                    const fovHalf = viewConfig.fieldOfView / 2;
+                    const x = (azimuthDiff / fovHalf) * (window.innerWidth / 2) + window.innerWidth / 2;
+                    const y = (-altitudeDiff / fovHalf) * (window.innerHeight / 2) + window.innerHeight / 2;
+                    
+                    if (x >= 0 && x <= window.innerWidth && y >= 0 && y <= window.innerHeight) {
+                        pathPoints.push({x, y, altitude, hour, azimuth});
                     }
                 }
-
-                currentSegment.push({ x, y });
             }
-
-            if (currentSegment.length > 1) segments.push(currentSegment);
-
-            segments.forEach(points => {
-                const pathData = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+            
+            if (pathPoints.length > 1) {
+                pathPoints.sort((a, b) => a.hour - b.hour);
+                
                 const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                path.setAttribute('d', pathData);
+                let d = `M ${pathPoints[0].x} ${pathPoints[0].y}`;
+                
+                for (let i = 1; i < pathPoints.length; i++) {
+                    d += ` L ${pathPoints[i].x} ${pathPoints[i].y}`;
+                }
+                
+                path.setAttribute('d', d);
+                path.setAttribute('stroke', pathColors[currentCelestialBody]);
+                path.setAttribute('stroke-width', '3');
                 path.setAttribute('fill', 'none');
-                path.setAttribute('stroke', colors[currentCelestialBody] || 'rgba(255,255,255,0.7)');
-                path.setAttribute('stroke-width', currentCelestialBody === 'europa-clipper' ? '3' : '2.2');
-                path.setAttribute('stroke-linecap', 'round');
-                path.setAttribute('stroke-linejoin', 'round');
-                path.setAttribute('stroke-dasharray', currentCelestialBody === 'europa-clipper' ? '10 8' : '7 7');
+                path.setAttribute('stroke-dasharray', '10,5');
+                
                 svg.appendChild(path);
+            }
+            
+            // Zeitmarkierungen
+            pathPoints.forEach(point => {
+                const markInterval = ['sun', 'moon'].includes(currentCelestialBody) ? 3 : 6;
+                if (point.hour % markInterval === 0) {
+                    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                    circle.setAttribute('cx', point.x);
+                    circle.setAttribute('cy', point.y);
+                    circle.setAttribute('r', '5');
+                    
+                    const fillColors = {
+                        'sun': point.altitude > 0 ? 'rgba(255, 180, 0, 0.9)' : 'rgba(150, 150, 150, 0.7)',
+                        'moon': point.altitude > 0 ? 'rgba(200, 200, 255, 0.9)' : 'rgba(150, 150, 150, 0.7)',
+                        'mercury': point.altitude > 0 ? 'rgba(140, 120, 83, 0.9)' : 'rgba(150, 150, 150, 0.7)',
+                        'venus': point.altitude > 0 ? 'rgba(255, 198, 73, 0.9)' : 'rgba(150, 150, 150, 0.7)',
+                        'mars': point.altitude > 0 ? 'rgba(255, 100, 100, 0.9)' : 'rgba(150, 150, 150, 0.7)',
+                        'jupiter': point.altitude > 0 ? 'rgba(255, 200, 100, 0.9)' : 'rgba(150, 150, 150, 0.7)',
+                        'saturn': point.altitude > 0 ? 'rgba(250, 178, 123, 0.9)' : 'rgba(150, 150, 150, 0.7)',
+                        'uranus': point.altitude > 0 ? 'rgba(79, 208, 231, 0.9)' : 'rgba(150, 150, 150, 0.7)',
+                        'neptune': point.altitude > 0 ? 'rgba(75, 112, 221, 0.9)' : 'rgba(150, 150, 150, 0.7)',
+                        'europa-clipper': point.altitude > 0 ? 'rgba(100, 255, 255, 0.9)' : 'rgba(150, 150, 150, 0.7)'
+                    };
+                    
+                    circle.setAttribute('fill', fillColors[currentCelestialBody]);
+                    circle.setAttribute('stroke', 'rgba(255, 255, 255, 0.8)');
+                    circle.setAttribute('stroke-width', '2');
+                    svg.appendChild(circle);
+                    
+                    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    text.setAttribute('x', point.x + 10);
+                    text.setAttribute('y', point.y - 10);
+                    text.setAttribute('fill', pathColors[currentCelestialBody]);
+                    text.setAttribute('font-size', '12');
+                    text.setAttribute('font-family', 'Arial');
+                    text.setAttribute('font-weight', 'bold');
+                    
+                    const displayHour = (point.hour - 12 + 24) % 24;
+                    text.textContent = Math.floor(displayHour) + 'h';
+                    svg.appendChild(text);
+                }
             });
         }
-
     </script>
 </body>
 </html>
