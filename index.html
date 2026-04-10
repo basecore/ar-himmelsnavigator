@@ -887,7 +887,10 @@
                     return {
                         x: before.x + (after.x - before.x) * factor,
                         y: before.y + (after.y - before.y) * factor,
-                        z: before.z + (after.z - before.z) * factor
+                        z: before.z + (after.z - before.z) * factor,
+                        velocity: before.velocity !== undefined && after.velocity !== undefined 
+                            ? before.velocity + (after.velocity - before.velocity) * factor 
+                            : 0
                     };
                 }
             }
@@ -1595,9 +1598,7 @@ setInterval(() => {
                     position.altitude = altRad * 180 / Math.PI;
                     position.distance = distanceAU * 149597870.7; // In km statt AU für UI
                     position.magnitude = 15; // Sehr dunkel
-                    
-                    const clipperSpeed = calculateClipperSpeedKmS(date);
-                    position.velocity = Number.isFinite(clipperSpeed) ? clipperSpeed : 0;
+                    position.velocity = clipperPos.velocity !== undefined ? clipperPos.velocity : 0;
                     
                     break;
             }
