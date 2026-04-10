@@ -781,6 +781,7 @@
             
             <div class="control-group">
                 <h4>🔄 Kompass-Korrekturen</h4>
+                <label><input type="checkbox" id="use-advanced-sensor" checked> Android-Sensor (AbsoluteOrientation)</label>
                 <label><input type="checkbox" id="invert-compass"> Kompass invertieren</label>
                 <label><input type="checkbox" id="reverse-compass"> Kompass umkehren</label>
                 <label>Manueller Offset: <input type="range" id="manual-offset" min="-180" max="180" value="0" step="1">
@@ -880,6 +881,7 @@
         
         // **KONFIGURATION**
         let compassConfig = {
+            useAdvancedSensor: true,
             invertCompass: false,
             reverseCompass: false,
             manualOffset: 0,
@@ -1265,29 +1267,26 @@
             return currentHeading;
         }
 
-
         function calculateTransitionFactor(pitch) {
             const absP = Math.abs(pitch);
             const horizontalDistance = 90 - absP;
-        
+
             if (horizontalDistance <= gimbalLockConfig.criticalZoneEnd) {
                 return 0;
             }
-        
+
             const transitionRange = gimbalLockConfig.deadZoneEnd - gimbalLockConfig.criticalZoneEnd;
             const distanceFromCritical = horizontalDistance - gimbalLockConfig.criticalZoneEnd;
-        
+
             return Math.min(1, Math.max(0, distanceFromCritical / transitionRange));
         }
-        
-
 
         function getAdaptiveSmoothingFactor(pitch) {
             if (!gimbalLockConfig.enabled) return compassConfig.smoothingFactor;
-        
+
             const absP = Math.abs(pitch);
             const horizontalDistance = 90 - absP;
-        
+
             if (horizontalDistance <= gimbalLockConfig.criticalZoneEnd) {
                 return compassConfig.smoothingFactor * 3;
             } else if (horizontalDistance <= gimbalLockConfig.deadZoneEnd) {
@@ -2009,85 +2008,156 @@
         }
 
         // ===== SENSOR-UPDATES MIT GIMBAL LOCK PROTECTION =====
+let orientationSensor = null;
+
         function startSensorUpdates() {
-            if ('ondeviceorientationabsolute' in window && compassConfig.useAbsolute) {
-                window.addEventListener('deviceorientationabsolute', handleDeviceOrientation, true);
-            } else {
-                window.addEventListener('deviceorientation', handleDeviceOrientation, true);
+            if (orientationSensor) {
+                orientationSensor.stop();
+                orientationSensor = null;
             }
+            window.removeEventListener('deviceorientationabsolute', handleDeviceOrientationLegacy, true);
+            window.removeEventListener('deviceorientation', handleDeviceOrientationLegacy, true);
+
+            if (compassConfig.useAdvancedSensor && 'AbsoluteOrientationSensor' in window) {
+                try {
+                    orientationSensor = new AbsoluteOrientationSensor({ frequency: 60, referenceFrame: 'device' });
+                    orientationSensor.addEventListener('reading', handleAdvancedSensorReading);
+                    orientationSensor.addEventListener('error', (event) => {
+                        console.warn("Sensor error:", event.error);
+                        if (event.error.name === 'NotAllowedError' || event.error.name === 'NotReadableError') {
+                            fallbackToLegacySensor();
+                        }
+                    });
+                    orientationSensor.start();
+                    console.log("AbsoluteOrientationSensor gestartet.");
+                    return;
+                } catch (error) {
+                    console.warn("Konnte AbsoluteOrientationSensor nicht starten:", error);
+                }
+            }
+            fallbackToLegacySensor();
         }
 
-        function handleDeviceOrientation(event) {
-            if (!event.alpha && !event.beta && !event.gamma) return;
-            
-            let rawAlpha = event.alpha || 0;
-            let beta = event.beta || 0;
-            let gamma = event.gamma || 0;
-            
-            let compassHeading = 0;
-            
-            if (event.webkitCompassHeading !== undefined && compassConfig.useWebkit) {
-                compassHeading = event.webkitCompassHeading;
-            } else if (event.absolute === true && compassConfig.useAbsolute) {
-                compassHeading = (360 - rawAlpha) % 360;
+        function fallbackToLegacySensor() {
+            if (compassConfig.useWebkit && typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                window.addEventListener('deviceorientation', handleDeviceOrientationLegacy, true);
+            } else if (compassConfig.useAbsolute) {
+                window.addEventListener('deviceorientationabsolute', handleDeviceOrientationLegacy, true);
             } else {
-                compassHeading = rawAlpha;
+                window.addEventListener('deviceorientation', handleDeviceOrientationLegacy, true);
             }
-            
-            if (compassConfig.invertCompass) {
-                compassHeading = (360 - compassHeading) % 360;
+            console.log("Legacy Sensor (DeviceOrientation) gestartet.");
+        }
+
+        function handleAdvancedSensorReading() {
+            const q = orientationSensor.quaternion;
+            if (!q) return;
+
+            const x = q[0], y = q[1], z = q[2], w = q[3];
+
+            const v_x = -2 * (x * z + w * y);
+            const v_y = -2 * (y * z - w * x);
+            const v_z = -(1 - 2 * (x * x + y * y));
+
+            let rawAzimuth = Math.atan2(v_x, v_y) * 180 / Math.PI;
+            if (rawAzimuth < 0) rawAzimuth += 360;
+
+            let rawPitch = Math.asin(Math.max(-1, Math.min(1, v_z))) * 180 / Math.PI;
+            let rawRoll = -Math.asin(Math.max(-1, Math.min(1, 2 * (x * z - w * y)))) * 180 / Math.PI;
+
+            applySensorValues(rawAzimuth, rawPitch, rawRoll, true, null);
+        }
+
+        function handleDeviceOrientationLegacy(event) {
+            let alpha = event.alpha;
+            let beta = event.beta;
+            let gamma = event.gamma;
+
+            if (alpha === null || beta === null || gamma === null) return;
+
+            let rawAzimuth = 0;
+            if (event.webkitCompassHeading !== undefined && compassConfig.useWebkit) {
+                rawAzimuth = event.webkitCompassHeading;
+            } else if (event.absolute === true && compassConfig.useAbsolute) {
+                rawAzimuth = (360 - alpha) % 360;
+            } else {
+                rawAzimuth = alpha;
             }
-            
-            if (compassConfig.reverseCompass) {
-                compassHeading = (360 - compassHeading) % 360;
-            }
-            
-            compassHeading = (compassHeading + compassConfig.manualOffset + 360) % 360;
+
             let correctedPitch = beta - 90;
+
             if (Math.abs(correctedPitch) < 1.5) {
                 correctedPitch = 0;
             }
-            // **GIMBAL LOCK PROTECTION ANWENDEN**
-            compassHeading = applyGimbalLockProtection(compassHeading, correctedPitch);
-            
-            smoothingBuffers.azimuth.push(compassHeading);
-            smoothingBuffers.pitch.push(correctedPitch);
-            smoothingBuffers.roll.push(gamma);
-            
-            // **ADAPTIVE GLÄTTUNG JE NACH NEIGUNG**
-            const adaptiveSmoothingFactor = getAdaptiveSmoothingFactor(correctedPitch);
-            
+
+            applySensorValues(rawAzimuth, correctedPitch, gamma, false, event);
+        }
+
+        function applySensorValues(rawAzimuth, rawPitch, rawRoll, isAdvanced, rawEvent) {
+            let currentHeading = rawAzimuth;
+
+            if (compassConfig.invertCompass) {
+                currentHeading = (360 - currentHeading) % 360;
+            }
+            if (compassConfig.reverseCompass) {
+                currentHeading = (currentHeading + 180) % 360;
+            }
+
+            currentHeading = (currentHeading + compassConfig.manualOffset + 360) % 360;
+
+            if (!isAdvanced) {
+                currentHeading = applyGimbalLockProtection(currentHeading, rawPitch);
+            }
+
+            smoothingBuffers.azimuth.push(currentHeading);
+            smoothingBuffers.pitch.push(rawPitch);
+            smoothingBuffers.roll.push(rawRoll);
+
+            const adaptiveSmoothingFactor = getAdaptiveSmoothingFactor(rawPitch);
+
             for (let axis in smoothingBuffers) {
                 if (smoothingBuffers[axis].length > adaptiveSmoothingFactor) {
                     smoothingBuffers[axis].shift();
                 }
             }
-            
+
             deviceOrientation.azimuth = (getCircularMean(smoothingBuffers.azimuth) + calibrationOffset + 360) % 360;
             deviceOrientation.pitch = smoothingBuffers.pitch.reduce((a, b) => a + b, 0) / smoothingBuffers.pitch.length;
             deviceOrientation.roll = smoothingBuffers.roll.reduce((a, b) => a + b, 0) / smoothingBuffers.roll.length;
-            
+
             updateHorizonLine();
             updateCompassRose();
             update3DDirectionArrow();
             updateCelestialInViewport();
             updateStarsDisplay();
             updateSensorMini();
-            
+
             if (viewConfig.showPathInFOV) {
                 drawCelestialPathInFOV();
             }
-            
+
             if (debugMode) {
-                updateDebugDisplay(event, { 
-                    rawAlpha, 
-                    rawBeta: beta,
-                    correctedPitch: correctedPitch,
-                    compassHeading: compassHeading,
+                updateDebugDisplay(rawEvent || {}, { 
+                    rawAlpha: rawAzimuth, 
+                    rawBeta: rawPitch + 90,
+                    correctedPitch: rawPitch,
+                    compassHeading: currentHeading,
                     finalAzimuth: deviceOrientation.azimuth,
-                    gimbalLockActive: isInGimbalLockZone(correctedPitch)
+                    gimbalLockActive: !isAdvanced && isInGimbalLockZone(rawPitch)
                 });
             }
+        }
+
+        // ===== HILFSFUNKTION FÜR KREIS-DURCHSCHNITT =====
+        function getCircularMean(angles) {
+            if (!angles.length) return 0;
+            let sumSin = 0, sumCos = 0;
+            for (let i = 0; i < angles.length; i++) {
+                const rad = angles[i] * Math.PI / 180;
+                sumSin += Math.sin(rad);
+                sumCos += Math.cos(rad);
+            }
+            return (Math.atan2(sumSin, sumCos) * 180 / Math.PI + 360) % 360;
         }
 
         // ===== RESTLICHE FUNKTIONEN (HORIZONT, PFEIL, KAMERA, ETC.) =====
@@ -2496,21 +2566,6 @@
 
         function normalizeAngle(angle) {
             return ((angle % 360) + 360) % 360;
-        }
-
-        function getCircularMean(angles) {
-            if (!angles.length) return 0;
-        
-            let sumSin = 0;
-            let sumCos = 0;
-        
-            for (const angle of angles) {
-                const rad = angle * Math.PI / 180;
-                sumSin += Math.sin(rad);
-                sumCos += Math.cos(rad);
-            }
-        
-            return (Math.atan2(sumSin, sumCos) * 180 / Math.PI + 360) % 360;
         }
 
         function getShortestAngle(from, to) {
