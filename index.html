@@ -714,10 +714,32 @@
     <!-- Sensors Readout Button -->
     <button id="sensors-btn" onclick="togglePanel('sensors-readout-panel')" title="Sensoren" style="position: fixed; bottom: 20px; left: 140px; background: #333; color: #00f3ff; border: 1px solid #00f3ff; padding: 12px; border-radius: 50%; font-size: 1.2em; cursor: pointer; z-index: 1000; width: 50px; height: 50px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;">📱</button>
 
+    
+    <!-- Info-Button -->
+    <button id="app-info-btn" onclick="togglePanel('app-info-panel')" title="Informationen" style="position: fixed; bottom: 20px; right: 140px; background: #333; color: #ffb400; border: 1px solid #ffb400; padding: 12px; border-radius: 50%; font-size: 1.2em; font-weight: bold; cursor: pointer; z-index: 1000; width: 50px; height: 50px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; line-height: 1;">ℹ️</button>
+
     <!-- Reset Calibration Button -->
     <button id="reset-cal-btn" onclick="resetCalibration()" title="Kalibrierung zurücksetzen" style="display: none; position: fixed; bottom: 20px; right: 80px; background: #ff3333; color: #fff; border: none; padding: 12px; border-radius: 50%; font-size: 1.2em; font-weight: bold; cursor: pointer; z-index: 1000; width: 50px; height: 50px; box-shadow: 0 4px 15px rgba(255, 51, 51, 0.4); justify-content: center; align-items: center;">↺</button>
 
     
+    
+    <!-- Info Panel -->
+    <div id="app-info-panel" class="panel minimized" style="top: 200px; right: 20px; width: 300px; text-align: left; font-size: 0.9em; line-height: 1.5;">
+        <div class="panel-header">
+            <span>ℹ️ App Info</span>
+            <button class="panel-toggle" onclick="togglePanel('app-info-panel')">▼</button>
+        </div>
+        <div class="panel-content" style="color: #fff;">
+            <p style="margin-bottom: 10px;"><strong>AR Himmelsnavigator</strong></p>
+            <p style="margin-bottom: 5px;"><strong>Version:</strong> v1.1</p>
+            <p style="margin-bottom: 5px;"><strong>Datum:</strong> 10.04.2026</p>
+            <p style="margin-bottom: 15px;"><strong>Developed by:</strong> Sebastian Rößer</p>
+
+            <p style="margin-bottom: 5px;"><a href="https://github.com/basecore/ar-himmelsnavigator" target="_blank" style="color: #00f3ff; text-decoration: none;">🔗 GitHub Repository</a></p>
+            <p style="margin-bottom: 10px;"><a href="https://github.com/basecore/ar-himmelsnavigator/issues" target="_blank" style="color: #ff3333; text-decoration: none;">🐞 GitHub Issues</a></p>
+        </div>
+    </div>
+
     <!-- Sensor-Panel -->
     <div id="settings-panel" class="panel minimized">
         <div class="panel-header">
@@ -2416,7 +2438,16 @@ let orientationSensor = null;
         }
 
         // ===== WEITERE FUNKTIONEN (KALIBRIERUNG, KAMERA, UI, ETC.) =====
-        function toggleCalibration() {
+        
+        function resetCalibration() {
+            calibrationOffset = 0;
+            document.getElementById('reset-cal-btn').style.display = 'none';
+            document.getElementById('calibrate-btn').innerHTML = '🎯<br>kal.';
+            isCalibrating = false;
+            updateRealtimeCelestialPositions();
+        }
+
+function toggleCalibration() {
             if (!isCalibrating) {
                 startCalibration();
             } else {
@@ -2631,6 +2662,9 @@ let orientationSensor = null;
             }
         }
         function setupPanels() {
+            const infoPanel = document.getElementById('app-info-panel');
+            if (infoPanel) infoPanel.classList.add('minimized');
+
             const settingsPanel = document.getElementById('settings-panel');
             if (settingsPanel) settingsPanel.classList.add('minimized');
 
