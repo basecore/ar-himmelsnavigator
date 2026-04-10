@@ -2631,8 +2631,14 @@ let orientationSensor = null;
             }
         }
         function setupPanels() {
-            document.getElementById('sensor-panel').classList.add('minimized');
-            document.getElementById('debug-panel').classList.add('minimized');
+            const settingsPanel = document.getElementById('settings-panel');
+            if (settingsPanel) settingsPanel.classList.add('minimized');
+
+            const sensorsPanel = document.getElementById('sensors-readout-panel');
+            if (sensorsPanel) sensorsPanel.classList.add('minimized');
+
+            const debugPanel = document.getElementById('debug-panel');
+            if (debugPanel) debugPanel.classList.add('minimized');
         }
 
         function normalizeAngle(angle) {
