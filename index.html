@@ -72,22 +72,30 @@
             bottom: 100px;
             left: 50%;
             transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.8);
-            border-radius: 15px;
-            padding: 10px 15px;
+            background: rgba(0, 0, 0, 0.82);
+            border-radius: 16px;
+            padding: 10px 14px;
             display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 8px;
+            flex-wrap: nowrap;
+            justify-content: space-between;
+            align-items: center;
+            gap: 6px;
+            width: min(92vw, 620px);
             z-index: 5;
-            max-width: 95vw;
+            overflow: hidden;
+            border: 1px solid rgba(255, 180, 0, 0.25);
+            box-shadow: 0 6px 18px rgba(0,0,0,0.35);
         }
 
         .compass-point {
-            padding: 4px 8px;
-            border-radius: 8px;
-            font-size: 0.9em;
-            transition: all 0.3s;
+            flex: 1 1 auto;
+            text-align: center;
+            padding: 6px 4px;
+            border-radius: 10px;
+            font-size: 0.85em;
+            transition: all 0.25s ease;
+            color: #ddd;
+            white-space: nowrap;
         }
 
         .compass-point.active {
@@ -1801,39 +1809,43 @@ setInterval(() => {
                         if (x >= 0 && x <= window.innerWidth && y >= 0 && y <= window.innerHeight) {
                             const isVisible = bodyPos.altitude > -5;
                             const baseSize = getBodySize(bodyKey, isVisible) * celestialConfig.size;
-                            
+
                             // **HERVORHEBUNG FÜR AUSGEWÄHLTEN HIMMELSKÖRPER**
                             const isSelected = bodyKey === currentCelestialBody;
-                            const size = isSelected ? baseSize * 1.3 : baseSize;
-                            const alpha = isSelected ? (isVisible ? 0.95 : 0.6) : (isVisible ? 0.7 : 0.4);
-                            
+                            const size = isSelected ? baseSize * 1.65 : baseSize;
+                            const alpha = isSelected ? (isVisible ? 1.0 : 0.75) : (isVisible ? 0.72 : 0.42);
+
                             ctx.save();
                             ctx.shadowColor = body.shadowColor;
-                            ctx.shadowBlur = isVisible ? (isSelected ? 30 : 20) : (isSelected ? 20 : 10);
-                            
-                            // **HIMMELSKÖRPER-KREIS**
+                            ctx.shadowBlur = isVisible ? (isSelected ? 38 : 20) : (isSelected ? 24 : 10);
+
                             ctx.beginPath();
                             ctx.arc(x, y, size, 0, 2 * Math.PI);
-                            ctx.fillStyle = body.color.replace(')', `, ${alpha})`).replace('rgb', 'rgba');
+                            ctx.fillStyle = body.color;
+                            ctx.globalAlpha = alpha;
                             ctx.fill();
-                            
-                            // **SYMBOL**
+
+                            ctx.globalAlpha = 1;
                             ctx.fillStyle = isVisible ? '#fff' : '#ccc';
-                            ctx.font = `bold ${size * 0.8}px Arial`;
+                            ctx.font = `bold ${size * 0.85}px Arial`;
                             ctx.textAlign = 'center';
-                            ctx.fillText(body.symbol, x, y + (size * 0.3));
-                            
-                            // **AUSWAHLRING FÜR AKTIVEN HIMMELSKÖRPER**
-                            if (isSelected && isVisible) {
-                                ctx.strokeStyle = body.color.replace(')', ', 0.8)').replace('rgb', 'rgba');
+                            ctx.fillText(body.symbol, x, y + (size * 0.28));
+
+                            if (isSelected) {
+                                ctx.strokeStyle = '#ffffff';
                                 ctx.lineWidth = 3;
-                                for (let i = 1; i <= 2; i++) {
-                                    ctx.beginPath();
-                                    ctx.arc(x, y, size + (i * 12), 0, 2 * Math.PI);
-                                    ctx.stroke();
-                                }
+                                ctx.beginPath();
+                                ctx.arc(x, y, size + 10, 0, 2 * Math.PI);
+                                ctx.stroke();
+
+                                ctx.strokeStyle = body.shadowColor;
+                                ctx.lineWidth = 4;
+                                ctx.globalAlpha = 0.9;
+                                ctx.beginPath();
+                                ctx.arc(x, y, size + 18, 0, 2 * Math.PI);
+                                ctx.stroke();
                             }
-                            
+
                             ctx.restore();
                         }
                     }
@@ -2441,18 +2453,21 @@ let orientationSensor = null;
         
         function resetCalibration() {
             calibrationOffset = 0;
-            document.getElementById('reset-cal-btn').style.display = 'none';
-            document.getElementById('calibrate-btn').innerHTML = '🎯<br>kal.';
             isCalibrating = false;
-            updateRealtimeCelestialPositions();
-        }
 
-function toggleCalibration() {
-            if (!isCalibrating) {
-                startCalibration();
-            } else {
-                finishCalibration();
+            const resetBtn = document.getElementById('reset-cal-btn');
+            const calBtn = document.getElementById('calibrate-btn');
+
+            if (resetBtn) resetBtn.style.display = 'none';
+            if (calBtn) {
+                const body = celestialBodies[currentCelestialBody];
+                calBtn.innerHTML = body ? `${body.symbol}<br>kal.` : '🎯<br>kal.';
+                calBtn.classList.remove('calibrating');
             }
+
+            updateRealtimeCelestialPositions();
+            updateCelestialInViewport();
+            updateCompassRose();
         }
 
         function startCalibration() {
@@ -2465,52 +2480,24 @@ function toggleCalibration() {
         function finishCalibration() {
             const celestialPos = getCurrentCelestialPosition();
             calibrationOffset = (celestialPos.azimuth - deviceOrientation.azimuth + 360) % 360;
-            
+
             isCalibrating = false;
             const btn = document.getElementById('calibrate-btn');
+            const resetBtn = document.getElementById('reset-cal-btn');
+
             btn.innerHTML = '✅<br>ok';
             btn.classList.remove('calibrating');
-            
+
+            if (resetBtn) {
+                resetBtn.style.display = 'flex';
+            }
+
             setTimeout(() => {
                 const body = celestialBodies[currentCelestialBody];
                 if (body) {
                     btn.innerHTML = `${body.symbol}<br>kal.`;
                 }
-            }, 3000);
-        }
-
-        async function initializeCamera() {
-            try {
-                if (cameraStream) {
-                    cameraStream.getTracks().forEach(track => track.stop());
-                    cameraStream = null;
-                }
-                
-                cameraStream = await navigator.mediaDevices.getUserMedia({
-                    video: { 
-                        facingMode: 'environment',
-                        width: { ideal: 1920 },
-                        height: { ideal: 1080 }
-                    },
-                    audio: false
-                });
-                
-                const cameraElement = document.getElementById('camera-stream');
-                cameraElement.srcObject = cameraStream;
-                
-                cameraStream.getTracks().forEach(track => {
-                    track.addEventListener('ended', () => {
-                        cameraEnabled = false;
-                        updateCameraStatus();
-                    });
-                });
-                
-                updateCameraStatus();
-            } catch (error) {
-                console.error('Kamera-Zugriff fehlgeschlagen:', error);
-                cameraEnabled = false;
-                updateCameraStatus();
-            }
+            }, 2000);
         }
 
         function toggleCamera() {
@@ -2598,16 +2585,14 @@ function toggleCalibration() {
         function updateCompassRose() {
             const compassRose = document.getElementById('compass-rose');
             let html = '';
-            
+
             compassDirections.forEach(dir => {
                 const diff = Math.abs(getShortestAngle(deviceOrientation.azimuth, dir.azimuth));
                 const isActive = diff < 22.5;
-                
-                html += `<div class="compass-point ${isActive ? 'active' : ''}">
-                    ${dir.name}<br><small>${dir.azimuth}°</small>
-                </div>`;
+
+                html += `<div class="compass-point ${isActive ? 'active' : ''}">${dir.name}</div>`;
             });
-            
+
             compassRose.innerHTML = html;
         }
 
