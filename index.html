@@ -1928,6 +1928,2908 @@ setInterval(() => {
                     
                     document.getElementById('moon-phase').textContent = phaseName;
                 }
+            } else {
+                document.getElementById('rise-time').textContent = '--:--';
+                document.getElementById('set-time').textContent = '--:--';
+            }
+            
+            if (!['sun', 'moon'].includes(currentCelestialBody)) {
+                if (celestialPos.magnitude !== undefined) {
+                    document.getElementById('magnitude').textContent = celestialPos.magnitude.toFixed(1) + 'm';
+                }
+                if (celestialPos.distance !== undefined) {
+                    if (currentCelestialBody === 'europa-clipper') {
+                        document.getElementById('distance').textContent = (celestialPos.distance).toFixed(0) + ' km';
+                    } else {
+                        document.getElementById('distance').textContent = celestialPos.distance.toFixed(2) + ' AE';
+                    }
+                }
+                if (currentCelestialBody === 'europa-clipper' && celestialPos.velocity !== undefined) {
+                    document.getElementById('velocity').textContent = Math.abs(celestialPos.velocity).toFixed(1) + ' km/s';
+                }
+            }
+        }
+
+        // ===== ECHTZEIT-SENSOR-UPDATES UND "IM SICHTFELD" =====
+        function updateSensorMini() {
+            document.getElementById('sensor-compass').textContent = deviceOrientation.azimuth.toFixed(1) + '°';
+            document.getElementById('sensor-pitch').textContent = deviceOrientation.pitch.toFixed(1) + '°';
+            document.getElementById('sensor-roll').textContent = deviceOrientation.roll.toFixed(1) + '°';
+            
+            const celestialPos = getCurrentCelestialPosition();
+            const azimuthDiff = getShortestAngle(deviceOrientation.azimuth, celestialPos.azimuth);
+            const pitchDiff = celestialPos.altitude - deviceOrientation.pitch;
+            
+            document.getElementById('sensor-azimuth-diff').textContent = azimuthDiff.toFixed(1) + '°';
+            document.getElementById('sensor-pitch-diff').textContent = pitchDiff.toFixed(1) + '°';
+            
+            const totalDiff = Math.sqrt(azimuthDiff * azimuthDiff + pitchDiff * pitchDiff);
+            const accuracy = Math.max(0, 100 - (totalDiff / 180 * 100));
+            document.getElementById('sensor-accuracy').textContent = accuracy.toFixed(0) + '%';
+            
+            const celestialInView = isInFieldOfView(celestialPos.azimuth, celestialPos.altitude);
+            const inViewElement = document.getElementById('celestial-in-view');
+            if (inViewElement) {
+                inViewElement.textContent = celestialInView ? 'JA' : 'NEIN';
+                inViewElement.style.color = celestialInView ? '#4CAF50' : '#f44336';
+            }
+        }
+
+        // ===== EVENT-LISTENER SETUP =====
+        function setupEventListeners() {
+            document.getElementById('calibrate-btn')?.addEventListener('click', handleCalibrationButton);
+            document.getElementById('reset-cal-btn')?.addEventListener('click', resetCalibration);
+            document.getElementById('camera-enabled').addEventListener('change', e => {
+                if (e.target.checked !== cameraEnabled) {
+                    toggleCamera();
+                }
+            });
+
+            // **HIMMELSKÖRPER-CONTROLS**
+            document.getElementById('show-all-celestial').addEventListener('change', e => {
+                celestialConfig.showAllCelestial = e.target.checked;
+                updateCelestialInViewport();
+            });
+
+            document.getElementById('show-celestial-names').addEventListener('change', e => {
+                celestialConfig.showNames = e.target.checked;
+            });
+
+            document.getElementById('celestial-size').addEventListener('input', e => {
+                celestialConfig.size = parseFloat(e.target.value);
+                document.getElementById('celestial-size-value').textContent = e.target.value;
+                updateCelestialInViewport();
+            });
+
+            // **STERNE-CONTROLS**
+            document.getElementById('show-stars').addEventListener('change', e => {
+                starsConfig.showStars = e.target.checked;
+                updateStarsDisplay();
+            });
+
+            document.getElementById('star-brightness').addEventListener('input', e => {
+                starsConfig.brightness = parseFloat(e.target.value);
+                document.getElementById('star-brightness-value').textContent = e.target.value;
+                updateStarsDisplay();
+            });
+
+            document.getElementById('star-size').addEventListener('input', e => {
+                starsConfig.size = parseInt(e.target.value);
+                document.getElementById('star-size-value').textContent = e.target.value + 'px';
+                updateStarsDisplay();
+            });
+
+            document.getElementById('show-star-names').addEventListener('change', e => {
+                starsConfig.showNames = e.target.checked;
+                updateStarsDisplay();
+            });
+
+            document.getElementById('fov-range').addEventListener('input', e => {
+                viewConfig.fieldOfView = parseInt(e.target.value);
+                document.getElementById('fov-value').textContent = e.target.value + '°';
+                updateStarsDisplay();
+                updateCelestialInViewport();
+            });
+
+            document.getElementById('show-celestial-in-fov').addEventListener('change', e => {
+                viewConfig.showCelestialInFOV = e.target.checked;
+            });
+
+            document.getElementById('show-path-in-fov').addEventListener('change', e => {
+                viewConfig.showPathInFOV = e.target.checked;
+                if (e.target.checked) {
+                    drawCelestialPathInFOV();
+                } else {
+                    document.getElementById('celestial-path').innerHTML = '';
+                }
+            });
+
+            document.getElementById('show-horizon').addEventListener('change', e => {
+                viewConfig.showHorizon = e.target.checked;
+                document.getElementById('horizon-line').style.display = e.target.checked ? 'block' : 'none';
+            });
+
+            document.getElementById('show-elevation-indicator').addEventListener('change', e => {
+                arrowConfig.showElevationIndicator = e.target.checked;
+            });
+
+            document.getElementById('separate-sensors').addEventListener('change', e => {
+                arrowConfig.separateSensors = e.target.checked;
+            });
+
+            document.getElementById('dynamic-length').addEventListener('change', e => {
+                arrowConfig.dynamicLength = e.target.checked;
+            });
+
+            document.getElementById('arrow-sensitivity').addEventListener('input', e => {
+                arrowConfig.arrowSensitivity = parseFloat(e.target.value);
+                document.getElementById('arrow-sens-value').textContent = e.target.value;
+            });
+
+            document.getElementById('use-altitude').addEventListener('change', e => {
+                compassConfig.useAltitude = e.target.checked;
+            });
+
+            document.getElementById('pitch-sensitivity').addEventListener('input', e => {
+                compassConfig.pitchSensitivity = parseFloat(e.target.value);
+                document.getElementById('pitch-value').textContent = e.target.value;
+            });
+
+            // **GIMBAL LOCK PROTECTION CONTROLS**
+            document.getElementById('gimbal-lock-protection').addEventListener('change', e => {
+                gimbalLockConfig.enabled = e.target.checked;
+            });
+
+            document.getElementById('dead-zone-range').addEventListener('input', e => {
+                gimbalLockConfig.deadZoneStart = -parseInt(e.target.value);
+                gimbalLockConfig.deadZoneEnd = parseInt(e.target.value);
+                document.getElementById('dead-zone-value').textContent = `±${e.target.value}°`;
+            });
+
+            document.getElementById('critical-zone-range').addEventListener('input', e => {
+                gimbalLockConfig.criticalZoneStart = -parseInt(e.target.value);
+                gimbalLockConfig.criticalZoneEnd = parseInt(e.target.value);
+                document.getElementById('critical-zone-value').textContent = `±${e.target.value}°`;
+            });
+            
+            document.getElementById('invert-compass').addEventListener('change', e => {
+                compassConfig.invertCompass = e.target.checked;
+            });
+            
+            document.getElementById('reverse-compass').addEventListener('change', e => {
+                compassConfig.reverseCompass = e.target.checked;
+            });
+            
+            document.getElementById('manual-offset').addEventListener('input', e => {
+                compassConfig.manualOffset = parseInt(e.target.value);
+                document.getElementById('offset-value').textContent = e.target.value + '°';
+            });
+            
+            document.getElementById('smoothing-factor').addEventListener('input', e => {
+                compassConfig.smoothingFactor = parseInt(e.target.value);
+                document.getElementById('smoothing-value').textContent = e.target.value;
+            });
+            
+            document.getElementById('debug-mode').addEventListener('change', e => {
+                debugMode = e.target.checked;
+            });
+        }
+
+        // ===== SENSOR-UPDATES MIT GIMBAL LOCK PROTECTION =====
+let orientationSensor = null;
+
+        function startSensorUpdates() {
+            if (orientationSensor) {
+                orientationSensor.stop();
+                orientationSensor = null;
+            }
+            window.removeEventListener('deviceorientationabsolute', handleDeviceOrientationLegacy, true);
+            window.removeEventListener('deviceorientation', handleDeviceOrientationLegacy, true);
+
+            if (compassConfig.useAdvancedSensor && 'AbsoluteOrientationSensor' in window) {
+                try {
+                    orientationSensor = new AbsoluteOrientationSensor({ frequency: 60, referenceFrame: 'device' });
+                    orientationSensor.addEventListener('reading', handleAdvancedSensorReading);
+                    orientationSensor.addEventListener('error', (event) => {
+                        console.warn("Sensor error:", event.error);
+                        if (event.error.name === 'NotAllowedError' || event.error.name === 'NotReadableError') {
+                            fallbackToLegacySensor();
+                        }
+                    });
+                    orientationSensor.start();
+                    console.log("AbsoluteOrientationSensor gestartet.");
+                    return;
+                } catch (error) {
+                    console.warn("Konnte AbsoluteOrientationSensor nicht starten:", error);
+                }
+            }
+            fallbackToLegacySensor();
+        }
+
+        function fallbackToLegacySensor() {
+            if (compassConfig.useWebkit && typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                window.addEventListener('deviceorientation', handleDeviceOrientationLegacy, true);
+            } else if (compassConfig.useAbsolute) {
+                window.addEventListener('deviceorientationabsolute', handleDeviceOrientationLegacy, true);
+            } else {
+                window.addEventListener('deviceorientation', handleDeviceOrientationLegacy, true);
+            }
+            console.log("Legacy Sensor (DeviceOrientation) gestartet.");
+        }
+
+        function handleAdvancedSensorReading() {
+            const q = orientationSensor.quaternion;
+            if (!q) return;
+
+            const x = q[0], y = q[1], z = q[2], w = q[3];
+
+            const v_x = -2 * (x * z + w * y);
+            const v_y = -2 * (y * z - w * x);
+            const v_z = -(1 - 2 * (x * x + y * y));
+
+            let rawAzimuth = Math.atan2(v_x, v_y) * 180 / Math.PI;
+            if (rawAzimuth < 0) rawAzimuth += 360;
+
+            let rawPitch = Math.asin(Math.max(-1, Math.min(1, v_z))) * 180 / Math.PI;
+            let rawRoll = -Math.asin(Math.max(-1, Math.min(1, 2 * (x * z - w * y)))) * 180 / Math.PI;
+
+            applySensorValues(rawAzimuth, rawPitch, rawRoll, true, null);
+        }
+
+        function handleDeviceOrientationLegacy(event) {
+            let alpha = event.alpha;
+            let beta = event.beta;
+            let gamma = event.gamma;
+
+            if (alpha === null || beta === null || gamma === null) return;
+
+            let rawAzimuth = 0;
+            if (event.webkitCompassHeading !== undefined && compassConfig.useWebkit) {
+                rawAzimuth = event.webkitCompassHeading;
+            } else if (event.absolute === true && compassConfig.useAbsolute) {
+                rawAzimuth = (360 - alpha) % 360;
+            } else {
+                rawAzimuth = alpha;
+            }
+
+            let correctedPitch = beta - 90;
+
+            if (Math.abs(correctedPitch) < 1.5) {
+                correctedPitch = 0;
+            }
+
+            applySensorValues(rawAzimuth, correctedPitch, gamma, false, event);
+        }
+
+        function applySensorValues(rawAzimuth, rawPitch, rawRoll, isAdvanced, rawEvent) {
+            let currentHeading = rawAzimuth;
+
+            if (compassConfig.invertCompass) {
+                currentHeading = (360 - currentHeading) % 360;
+            }
+            if (compassConfig.reverseCompass) {
+                currentHeading = (currentHeading + 180) % 360;
+            }
+
+            currentHeading = (currentHeading + compassConfig.manualOffset + 360) % 360;
+
+            if (!isAdvanced) {
+                currentHeading = applyGimbalLockProtection(currentHeading, rawPitch);
+            }
+
+            smoothingBuffers.azimuth.push(currentHeading);
+            smoothingBuffers.pitch.push(rawPitch);
+            smoothingBuffers.roll.push(rawRoll);
+
+            const adaptiveSmoothingFactor = getAdaptiveSmoothingFactor(rawPitch);
+
+            for (let axis in smoothingBuffers) {
+                if (smoothingBuffers[axis].length > adaptiveSmoothingFactor) {
+                    smoothingBuffers[axis].shift();
+                }
+            }
+
+            deviceOrientation.azimuth = (getCircularMean(smoothingBuffers.azimuth) + calibrationOffset + 360) % 360;
+            deviceOrientation.pitch = smoothingBuffers.pitch.reduce((a, b) => a + b, 0) / smoothingBuffers.pitch.length;
+            deviceOrientation.roll = smoothingBuffers.roll.reduce((a, b) => a + b, 0) / smoothingBuffers.roll.length;
+
+            updateHorizonLine();
+            updateCompassRose();
+            update3DDirectionArrow();
+            updateCelestialInViewport();
+            updateStarsDisplay();
+            updateSensorMini();
+
+            if (viewConfig.showPathInFOV) {
+                drawCelestialPathInFOV();
+            }
+
+            if (debugMode) {
+                updateDebugDisplay(rawEvent || {}, { 
+                    rawAlpha: rawAzimuth, 
+                    rawBeta: rawPitch + 90,
+                    correctedPitch: rawPitch,
+                    compassHeading: currentHeading,
+                    finalAzimuth: deviceOrientation.azimuth,
+                    gimbalLockActive: !isAdvanced && isInGimbalLockZone(rawPitch)
+                });
+            }
+        }
+
+        // ===== HILFSFUNKTION FÜR KREIS-DURCHSCHNITT =====
+        function getCircularMean(angles) {
+            if (!angles.length) return 0;
+            let sumSin = 0, sumCos = 0;
+            for (let i = 0; i < angles.length; i++) {
+                const rad = angles[i] * Math.PI / 180;
+                sumSin += Math.sin(rad);
+                sumCos += Math.cos(rad);
+            }
+            return (Math.atan2(sumSin, sumCos) * 180 / Math.PI + 360) % 360;
+        }
+
+        // ===== RESTLICHE FUNKTIONEN (HORIZONT, PFEIL, KAMERA, ETC.) =====
+        function updateHorizonLine() {
+            if (!viewConfig.showHorizon) return;
+            
+            const horizonLine = document.getElementById('horizon-line');
+            const screenHeight = window.innerHeight;
+            
+            const pitchRadians = (deviceOrientation.pitch * Math.PI) / 180;
+            const horizonOffset = Math.tan(pitchRadians) * (screenHeight / 2) * compassConfig.pitchSensitivity;
+            const horizonY = (screenHeight / 2) + horizonOffset;
+            
+            horizonLine.style.top = `${Math.max(0, Math.min(screenHeight, horizonY))}px`;
+        }
+
+        function update3DDirectionArrow() {
+            const canvas = document.getElementById('direction-arrow');
+            const ctx = canvas.getContext('2d');
+
+            canvas.style.opacity = '1';
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+            const celestialPos = getCurrentCelestialPosition();
+            const isVisible = celestialPos.altitude > 0;
+
+            if (arrowConfig.separateSensors) {
+                const azimuthDiff = getShortestAngle(deviceOrientation.azimuth, celestialPos.azimuth);
+                const pitchDiff = celestialPos.altitude - deviceOrientation.pitch;
+
+                const maxLength = 60;
+                const arrowWidth = 3;
+                
+                let horizontalLength, verticalLength;
+                
+                if (arrowConfig.dynamicLength) {
+                    horizontalLength = maxLength * (Math.min(Math.abs(azimuthDiff) / 180, 1));
+                    verticalLength = maxLength * (Math.min(Math.abs(pitchDiff) / 90, 1));
+                    horizontalLength = Math.max(15, horizontalLength);
+                    verticalLength = Math.max(15, verticalLength);
+                } else {
+                    horizontalLength = 50;
+                    verticalLength = 50;
+                }
+
+                ctx.save();
+                ctx.translate(centerX, centerY);
+
+                // **HORIZONTALER BALKEN (BLAU) - Kompass**
+                ctx.strokeStyle = '#0066ff';
+                ctx.fillStyle = '#0066ff';
+                ctx.lineWidth = arrowWidth;
+
+                ctx.beginPath();
+                ctx.moveTo(-horizontalLength, 0);
+                ctx.lineTo(horizontalLength, 0);
+                ctx.stroke();
+
+                // **VERTIKALER BALKEN (ROT) - Neigung**
+                ctx.strokeStyle = '#ff3333';
+                ctx.fillStyle = '#ff3333';
+                ctx.lineWidth = arrowWidth;
+
+                ctx.beginPath();
+                ctx.moveTo(0, -verticalLength);
+                ctx.lineTo(0, verticalLength);
+                ctx.stroke();
+
+                // **PFEILSPITZEN**
+                const arrowSize = Math.min(12, horizontalLength * 0.4);
+                ctx.fillStyle = '#0066ff';
+                ctx.beginPath();
+                if (azimuthDiff > 0) {
+                    ctx.moveTo(horizontalLength, 0);
+                    ctx.lineTo(horizontalLength - arrowSize, -arrowSize * 0.7);
+                    ctx.lineTo(horizontalLength - arrowSize, arrowSize * 0.7);
+                } else {
+                    ctx.moveTo(-horizontalLength, 0);
+                    ctx.lineTo(-horizontalLength + arrowSize, -arrowSize * 0.7);
+                    ctx.lineTo(-horizontalLength + arrowSize, arrowSize * 0.7);
+                }
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.fillStyle = '#ff3333';
+                ctx.beginPath();
+                if (pitchDiff > 0) {
+                    ctx.moveTo(0, -verticalLength);
+                    ctx.lineTo(-arrowSize * 0.7, -verticalLength + arrowSize);
+                    ctx.lineTo(arrowSize * 0.7, -verticalLength + arrowSize);
+                } else {
+                    ctx.moveTo(0, verticalLength);
+                    ctx.lineTo(-arrowSize * 0.7, verticalLength - arrowSize);
+                    ctx.lineTo(arrowSize * 0.7, verticalLength - arrowSize);
+                }
+                ctx.closePath();
+                ctx.fill();
+
+                if (arrowConfig.showElevationIndicator) {
+                    ctx.fillStyle = 'rgba(0, 102, 255, 0.7)';
+                    const hIntensity = Math.abs(azimuthDiff) / 180;
+                    for (let i = 1; i <= 3; i++) {
+                        if (hIntensity > i * 0.25) {
+                            const x = azimuthDiff > 0 ? i * 10 : -i * 10;
+                            ctx.beginPath();
+                            ctx.arc(x, 0, 3, 0, 2 * Math.PI);
+                            ctx.fill();
+                        }
+                    }
+                    
+                    ctx.fillStyle = 'rgba(255, 51, 51, 0.7)';
+                    const vIntensity = Math.abs(pitchDiff) / 90;
+                    for (let i = 1; i <= 3; i++) {
+                        if (vIntensity > i * 0.25) {
+                            const y = pitchDiff > 0 ? -i * 10 : i * 10;
+                            ctx.beginPath();
+                            ctx.arc(0, y, 3, 0, 2 * Math.PI);
+                            ctx.fill();
+                        }
+                    }
+                }
+
+                ctx.restore();
+
+                ctx.font = 'bold 10px Arial';
+                ctx.textAlign = 'center';
+                
+                ctx.fillStyle = '#0066ff';
+                ctx.fillText(`↔${Math.abs(azimuthDiff).toFixed(0)}°`, centerX, canvas.height - 25);
+                
+                ctx.fillStyle = '#ff3333';
+                ctx.fillText(`↕${Math.abs(pitchDiff).toFixed(0)}°`, centerX, canvas.height - 10);
+
+            } else {
+                // **ORIGINAL-MODUS MIT HIMMELSKÖRPER-SPEZIFISCHEN FARBEN**
+                let azimuthAngle = getShortestAngle(deviceOrientation.azimuth, celestialPos.azimuth);
+                const pitchDiff = (celestialPos.altitude - deviceOrientation.pitch) * arrowConfig.arrowSensitivity;
+
+                const maxLength = 60;
+                const arrowWidth = 3;
+                let baseLength;
+                if (arrowConfig.dynamicLength) {
+                    const totalDiff = Math.sqrt(azimuthAngle * azimuthAngle + pitchDiff * pitchDiff);
+                    baseLength = maxLength * (totalDiff / 180);
+                    baseLength = Math.max(15, Math.min(maxLength, baseLength));
+                } else {
+                    baseLength = 50;
+                }
+
+                ctx.save();
+                ctx.translate(centerX, centerY);
+
+                const body = celestialBodies[currentCelestialBody];
+                const arrowColor = isVisible ? body.color : body.color.replace(')', ', 0.5)').replace('rgb', 'rgba');
+
+                ctx.strokeStyle = arrowColor;
+                ctx.fillStyle = arrowColor;
+                ctx.lineWidth = arrowWidth;
+
+                ctx.rotate((azimuthAngle * Math.PI) / 180);
+
+                const pitchOffset = -Math.max(-20, Math.min(20, pitchDiff * 2));
+
+                ctx.beginPath();
+                ctx.moveTo(0, -baseLength + pitchOffset);
+                ctx.lineTo(0, baseLength - pitchOffset);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(0, -baseLength + pitchOffset);
+                ctx.lineTo(-12, -baseLength + 15 + pitchOffset);
+                ctx.lineTo(12, -baseLength + 15 + pitchOffset);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.restore();
+
+                ctx.fillStyle = arrowColor;
+                ctx.font = 'bold 11px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(`${Math.abs(azimuthAngle).toFixed(0)}°`, centerX, canvas.height - 10);
+            }
+        }
+
+        // ===== WEITERE FUNKTIONEN (KALIBRIERUNG, KAMERA, UI, ETC.) =====
+
+        function getRawAzimuth() {
+            if (!smoothingBuffers.azimuth || !smoothingBuffers.azimuth.length) {
+                return deviceOrientation.azimuth || 0;
+            }
+            return getCircularMean(smoothingBuffers.azimuth);
+        }
+
+        function resetCalibration() {
+            calibrationOffset = 0;
+            isCalibrating = false;
+
+            const resetBtn = document.getElementById('reset-cal-btn');
+            const calBtn = document.getElementById('calibrate-btn');
+
+            if (resetBtn) resetBtn.style.display = 'none';
+            if (calBtn) {
+                const body = celestialBodies[currentCelestialBody];
+                calBtn.innerHTML = body ? `${body.symbol}<br>kal.` : '🎯<br>kal.';
+                calBtn.classList.remove('calibrating');
+            }
+
+            updateRealtimeCelestialPositions();
+            updateCelestialInViewport();
+            updateCompassRose();
+        }
+
+        function startCalibration() {
+            isCalibrating = true;
+            const btn = document.getElementById('calibrate-btn');
+            if (btn) {
+                btn.innerHTML = '🎯<br>ziel';
+                btn.classList.add('calibrating');
+            }
+        }
+
+        function finishCalibration() {
+            const celestialPos = getCurrentCelestialPosition();
+            if (!celestialPos || !Number.isFinite(celestialPos.azimuth)) {
+                isCalibrating = false;
+                return;
+            }
+
+            const rawAzimuth = getRawAzimuth();
+            calibrationOffset = ((celestialPos.azimuth - rawAzimuth + 540) % 360) - 180;
+            isCalibrating = false;
+
+            const btn = document.getElementById('calibrate-btn');
+            const resetBtn = document.getElementById('reset-cal-btn');
+
+            if (btn) {
+                btn.innerHTML = '✅<br>ok';
+                btn.classList.remove('calibrating');
+            }
+
+            if (resetBtn) {
+                resetBtn.style.display = 'flex';
+            }
+
+            updateRealtimeCelestialPositions();
+            updateCelestialInViewport();
+            updateCompassRose();
+
+            setTimeout(() => {
+                const body = celestialBodies[currentCelestialBody];
+                if (btn && body) {
+                    btn.innerHTML = `${body.symbol}<br>kal.`;
+                }
+            }, 1200);
+        }
+
+        function handleCalibrationButton() {
+            if (!isCalibrating) {
+                startCalibration();
+            } else {
+                finishCalibration();
+            }
+        }
+
+        function toggleCamera() {
+
+            if (!cameraEnabled) {
+                cameraEnabled = true;
+                initializeCamera().then(() => {
+                    const cameraElement = document.getElementById('camera-stream');
+                    const toggleButton = document.getElementById('camera-toggle');
+                    const checkbox = document.getElementById('camera-enabled');
+                    
+                    cameraElement.classList.remove('disabled');
+                    toggleButton.textContent = '📹';
+                    toggleButton.classList.add('enabled');
+                    checkbox.checked = true;
+                    
+                    updateCameraStatus();
+                }).catch(error => {
+                    cameraEnabled = false;
+                    updateCameraStatus();
+                });
+            } else {
+                cameraEnabled = false;
+                
+                if (cameraStream) {
+                    cameraStream.getTracks().forEach(track => track.stop());
+                    cameraStream = null;
+                }
+                
+                const cameraElement = document.getElementById('camera-stream');
+                const toggleButton = document.getElementById('camera-toggle');
+                const checkbox = document.getElementById('camera-enabled');
+                
+                cameraElement.srcObject = null;
+                cameraElement.classList.add('disabled');
+                toggleButton.textContent = '📷';
+                toggleButton.classList.remove('enabled');
+                checkbox.checked = false;
+                
+                updateCameraStatus();
+            }
+        }
+
+        function updateCameraStatus() {
+            // Status wird im Sensor-Mini-Panel angezeigt
+        }
+
+        function detectOrientation() {
+            if (window.innerHeight > window.innerWidth) {
+                screenOrientation = 'portrait';
+            } else {
+                screenOrientation = 'landscape';
+            }
+        }
+
+        async function requestSensorPermissions() {
+            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                try {
+                    const permission = await DeviceOrientationEvent.requestPermission();
+                    if (permission !== 'granted') {
+                        alert('Sensor-Berechtigung erforderlich für Kompass-Funktionalität!');
+                    }
+                } catch (error) {
+                    console.error('Sensor-Berechtigung fehlgeschlagen:', error);
+                }
+            }
+        }
+
+        function initializeLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    position => {
+                        userLocation.lat = position.coords.latitude;
+                        userLocation.lon = position.coords.longitude;
+                        updateRealtimeCelestialPositions();
+                    },
+                    error => {
+                        console.error('Standort-Zugriff fehlgeschlagen:', error);
+                        alert('Standort-Zugriff ist für Himmelskörper-Berechnung erforderlich!');
+                    },
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 }
+                );
+            }
+        }
+
+        function updateCompassRose() {
+            const compassRose = document.getElementById('compass-rose');
+            let html = '';
+
+            compassDirections.forEach(dir => {
+                const diff = Math.abs(getShortestAngle(deviceOrientation.azimuth, dir.azimuth));
+                const isActive = diff < 22.5;
+
+                html += `<div class="compass-point ${isActive ? 'active' : ''}">${dir.name}</div>`;
+            });
+
+            compassRose.innerHTML = html;
+        }
+
+        function updateDebugDisplay(event, values) {
+            const debugDiv = document.getElementById('debug-values');
+            const celestialPos = getCurrentCelestialPosition();
+            const celestialInView = isInFieldOfView(celestialPos.azimuth, celestialPos.altitude);
+            const azimuthDiff = getShortestAngle(deviceOrientation.azimuth, celestialPos.azimuth);
+            const pitchDiff = celestialPos.altitude - deviceOrientation.pitch;
+            
+            // **ZÄHLE SICHTBARE HIMMELSKÖRPER**
+            let visibleBodies = 0;
+            Object.keys(celestialBodies).forEach(bodyKey => {
+                const bodyPos = getPositionForBody(bodyKey);
+                if (bodyPos && isInFieldOfView(bodyPos.azimuth, bodyPos.altitude)) {
+                    visibleBodies++;
+                }
+            });
+            
+            // **ZÄHLE SICHTBARE STERNE**
+            let visibleStars = 0;
+            if (starsConfig.showStars) {
+                visibleStars = brightestStars.filter(star => {
+                    const starPos = calculateStarPosition(star.ra, star.dec, new Date(), userLocation.lat, userLocation.lon);
+                    return starPos.altitude > 0 && isInFieldOfView(starPos.azimuth, starPos.altitude);
+                }).length;
+            }
+            
+            debugDiv.innerHTML = `
+                <div class="debug-value">Current Body: ${currentCelestialBody.toUpperCase()}</div>
+                <div class="debug-value">Gimbal Lock Zone: ${values.gimbalLockActive ? 'ACTIVE' : 'NORMAL'}</div>
+                <div class="debug-value">Pitch: ${deviceOrientation.pitch.toFixed(1)}°</div>
+                <div class="debug-value">Smoothing Factor: ${getAdaptiveSmoothingFactor(deviceOrientation.pitch)}</div>
+                <div class="debug-value">Visible Bodies: ${visibleBodies}/10</div>
+                <div class="debug-value">Stars Visible: ${visibleStars}/100</div>
+                <div class="debug-value">FOV: ${viewConfig.fieldOfView}°</div>
+                <div class="debug-value">${currentCelestialBody} in View: ${celestialInView ? 'YES' : 'NO'}</div>
+                <div class="debug-value">Azimuth Diff (Blue): ${azimuthDiff.toFixed(2)}°</div>
+                <div class="debug-value">Pitch Diff (Red): ${pitchDiff.toFixed(2)}°</div>
+                ${celestialPos.magnitude !== undefined ? `<div class="debug-value">Magnitude: ${celestialPos.magnitude.toFixed(2)}m</div>` : ''}
+                ${celestialPos.distance !== undefined ? `<div class="debug-value">Distance: ${celestialPos.distance.toFixed(2)} ${currentCelestialBody === 'europa-clipper' ? 'km' : 'AE'}</div>` : ''}
+                ${celestialPos.velocity !== undefined ? `<div class="debug-value">Velocity: ${celestialPos.velocity.toFixed(2)} km/s</div>` : ''}
+            `;
+        }
+
+        function togglePanel(panelId) {
+            const panel = document.getElementById(panelId);
+            panel.classList.toggle('minimized');
+            const toggle = panel.querySelector('.panel-toggle');
+            if (toggle) {
+                toggle.textContent = panel.classList.contains('minimized') ? '▼' : '▲';
+            }
+        }
+        function setupPanels() {
+            const infoPanel = document.getElementById('app-info-panel');
+            if (infoPanel) infoPanel.classList.add('minimized');
+
+            const settingsPanel = document.getElementById('settings-panel');
+            if (settingsPanel) settingsPanel.classList.add('minimized');
+
+            const sensorsPanel = document.getElementById('sensors-readout-panel');
+            if (sensorsPanel) sensorsPanel.classList.add('minimized');
+
+            const debugPanel = document.getElementById('debug-panel');
+            if (debugPanel) debugPanel.classList.add('minimized');
+        }
+
+        function normalizeAngle(angle) {
+            return ((angle % 360) + 360) % 360;
+        }
+
+        function getShortestAngle(from, to) {
+            let diff = (to - from + 540) % 360 - 180;
+            return diff;
+        }
+
+        function resizeCanvas() {
+            const canvas = document.getElementById('ar-overlay');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+
+        function resizeStarsCanvas() {
+            const canvas = document.getElementById('stars-overlay');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+
+        function calculateClipperPositionAdvanced(date, lat, lon) {
+            if (typeof europaClipperEphemeris === 'undefined') {
+                return calculatePlanetPositionAdvanced('jupiter', date, lat, lon);
+            }
+
+            const ra = europaClipperEphemeris.ra ? interpolateCoordinate(europaClipperEphemeris.ra, date) : null;
+            const dec = europaClipperEphemeris.dec ? interpolateCoordinate(europaClipperEphemeris.dec, date) : null;
+
+            if (ra == null || dec == null || !Number.isFinite(ra) || !Number.isFinite(dec)) {
+                return calculatePlanetPositionAdvanced('jupiter', date, lat, lon);
+            }
+
+            return calculateStarPosition(ra, dec, date, lat, lon);
+        }
+
+        function calculateClipperSpeedKmS(date = new Date()) {
+            if (typeof europaClipperEphemeris === 'undefined') return null;
+            const hasXYZ = europaClipperEphemeris.x && europaClipperEphemeris.y && europaClipperEphemeris.z;
+            if (!hasXYZ) return null;
+
+            const t1 = new Date(date.getTime() - 60000);
+            const t2 = new Date(date.getTime() + 60000);
+
+            const p1 = {
+                x: interpolateCoordinate(europaClipperEphemeris.x, t1),
+                y: interpolateCoordinate(europaClipperEphemeris.y, t1),
+                z: interpolateCoordinate(europaClipperEphemeris.z, t1)
+            };
+            const p2 = {
+                x: interpolateCoordinate(europaClipperEphemeris.x, t2),
+                y: interpolateCoordinate(europaClipperEphemeris.y, t2),
+                z: interpolateCoordinate(europaClipperEphemeris.z, t2)
+            };
+
+            const values = [p1.x, p1.y, p1.z, p2.x, p2.y, p2.z];
+            if (values.some(v => v == null || !Number.isFinite(v))) return null;
+
+            const distKm = Math.hypot(p2.x - p1.x, p2.y - p1.y, p2.z - p1.z);
+            return distKm / 120;
+        }
+
+        function getBodyAltAz(bodyKey, date, lat, lon) {
+            if (bodyKey === 'sun') {
+                const p = SunCalc.getPosition(date, lat, lon);
+                return {
+                    azimuth: ((p.azimuth * 180 / Math.PI) + 180) % 360,
+                    altitude: p.altitude * 180 / Math.PI
+                };
+            }
+
+            if (bodyKey === 'moon') {
+                const p = SunCalc.getMoonPosition(date, lat, lon);
+                return {
+                    azimuth: ((p.azimuth * 180 / Math.PI) + 180) % 360,
+                    altitude: p.altitude * 180 / Math.PI
+                };
+            }
+
+            if (bodyKey === 'europa-clipper') {
+                return calculateClipperPositionAdvanced(date, lat, lon);
+            }
+
+            return calculatePlanetPositionAdvanced(bodyKey, date, lat, lon);
+        }
+
+        function refineCrossing(bodyKey, tA, tB, lat, lon, horizonDeg) {
+            let a = tA.getTime();
+            let b = tB.getTime();
+
+            for (let i = 0; i < 20; i++) {
+                const m = (a + b) / 2;
+                const altA = getBodyAltAz(bodyKey, new Date(a), lat, lon).altitude;
+                const altM = getBodyAltAz(bodyKey, new Date(m), lat, lon).altitude;
+
+                if ((altA - horizonDeg) * (altM - horizonDeg) <= 0) {
+                    b = m;
+                } else {
+                    a = m;
+                }
+            }
+
+            return new Date((a + b) / 2);
+        }
+
+        function calculateRiseSet(bodyKey, baseDate, lat, lon, horizonDeg = 0) {
+            const start = new Date(baseDate);
+            start.setHours(0, 0, 0, 0);
+
+            const end = new Date(start.getTime() + 48 * 3600000);
+            const stepMs = 5 * 60 * 1000;
+            let rise = null;
+            let set = null;
+
+            let prevTime = new Date(start);
+            let prevPos = getBodyAltAz(bodyKey, prevTime, lat, lon);
+            let prevAlt = prevPos && Number.isFinite(prevPos.altitude) ? prevPos.altitude : null;
+
+            for (let t = start.getTime() + stepMs; t <= end.getTime(); t += stepMs) {
+                const currTime = new Date(t);
+                const currPos = getBodyAltAz(bodyKey, currTime, lat, lon);
+                const currAlt = currPos && Number.isFinite(currPos.altitude) ? currPos.altitude : null;
+
+                if (prevAlt != null && currAlt != null) {
+                    if (prevAlt < horizonDeg && currAlt >= horizonDeg && !rise) {
+                        rise = refineCrossing(bodyKey, prevTime, currTime, lat, lon, horizonDeg);
+                    }
+                    if (prevAlt >= horizonDeg && currAlt < horizonDeg && !set) {
+                        set = refineCrossing(bodyKey, prevTime, currTime, lat, lon, horizonDeg);
+                    }
+                }
+
+                prevTime = currTime;
+                prevAlt = currAlt;
+            }
+
+            return { rise, set };
+        }
+
+        function formatRiseSetTime(date) {
+            if (!date) return '—';
+            return date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        // ===== HIMMELSKÖRPER-LAUFBAHN IM SICHTFELD =====
+        function drawCelestialPathInFOV() {
+            const svg = document.getElementById('celestial-path');
+            if (!svg) return;
+            svg.innerHTML = '';
+
+            if (userLocation.lat == null || userLocation.lon == null) return;
+
+            const now = new Date();
+            const pathPoints = [];
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+
+            const pathColors = {
+                'sun': 'rgba(255, 180, 0, 0.75)',
+                'moon': 'rgba(200, 200, 255, 0.75)',
+                'mercury': 'rgba(140, 120, 83, 0.75)',
+                'venus': 'rgba(255, 198, 73, 0.75)',
+                'mars': 'rgba(255, 100, 100, 0.75)',
+                'jupiter': 'rgba(255, 200, 100, 0.75)',
+                'saturn': 'rgba(250, 178, 123, 0.75)',
+                'uranus': 'rgba(79, 208, 231, 0.75)',
+                'neptune': 'rgba(75, 112, 221, 0.75)',
+                'europa-clipper': 'rgba(100, 255, 255, 0.85)'
+            };
+
+            const timeStepHours = 0.25;
+            for (let hour = -12; hour <= 12; hour += timeStepHours) {
+                const testTime = new Date(now.getTime() + hour * 3600000);
+                const pos = getBodyAltAz(currentCelestialBody, testTime, userLocation.lat, userLocation.lon);
+                if (!pos || !Number.isFinite(pos.azimuth) || !Number.isFinite(pos.altitude)) continue;
+
+                const x = (pos.azimuth / 360) * width;
+                const y = ((90 - pos.altitude) / 180) * height;
+                pathPoints.push({ x, y, hour, altitude: pos.altitude, azimuth: pos.azimuth, time: testTime });
+            }
+
+            if (pathPoints.length > 1) {
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                let d = `M ${pathPoints[0].x} ${pathPoints[0].y}`;
+
+                for (let i = 1; i < pathPoints.length; i++) {
+                    const prev = pathPoints[i - 1];
+                    const curr = pathPoints[i];
+                    if (Math.abs(curr.x - prev.x) > width / 2) {
+                        d += ` M ${curr.x} ${curr.y}`;
+                    } else {
+                        d += ` L ${curr.x} ${curr.y}`;
+                    }
+                }
+
+                path.setAttribute('d', d);
+                path.setAttribute('stroke', pathColors[currentCelestialBody] || 'rgba(255,255,255,0.8)');
+                path.setAttribute('stroke-width', '3');
+                path.setAttribute('fill', 'none');
+                path.setAttribute('stroke-dasharray', '10,5');
+                svg.appendChild(path);
+            }
+
+            pathPoints.forEach(point => {
+                const roundedHour = Math.round(point.hour * 100) / 100;
+                if (Math.abs(roundedHour % 3) < 0.01) {
+                    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                    circle.setAttribute('cx', point.x);
+                    circle.setAttribute('cy', point.y);
+                    circle.setAttribute('r', '4');
+                    circle.setAttribute('fill', point.altitude > 0 ? 'rgba(255,255,255,0.95)' : 'rgba(150,150,150,0.7)');
+                    circle.setAttribute('stroke', 'rgba(255,255,255,0.4)');
+                    circle.setAttribute('stroke-width', '1');
+                    svg.appendChild(circle);
+
+                    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    text.setAttribute('x', point.x + 8);
+                    text.setAttribute('y', point.y - 8);
+                    text.setAttribute('fill', pathColors[currentCelestialBody] || 'rgba(255,255,255,0.9)');
+                    text.setAttribute('font-size', '12');
+                    text.setAttribute('font-family', 'Arial, sans-serif');
+                    text.textContent = `${roundedHour > 0 ? '+' : ''}${Math.round(roundedHour)}h`;
+                    svg.appendChild(text);
+                }
+            });
+
+            const riseSet = calculateRiseSet(currentCelestialBody, now, userLocation.lat, userLocation.lon);
+            const infoPanel = document.getElementById('info-panel') || document.getElementById('celestial-info');
+            if (infoPanel) {
+                const existing = document.getElementById('rise-set-extra');
+                if (existing) existing.remove();
+
+                const extra = document.createElement('div');
+                extra.id = 'rise-set-extra';
+                extra.style.marginTop = '8px';
+                extra.style.fontSize = '12px';
+                extra.style.lineHeight = '1.4';
+                extra.innerHTML = `Aufgang: ${formatRiseSetTime(riseSet.rise)}<br>Untergang: ${formatRiseSetTime(riseSet.set)}`;
+                infoPanel.appendChild(extra);
+            }
+        }
+        </script>
+</body>
+</html>        #fallback-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(180deg, #001122 0%, #003366 50%, #000011 100%);
+            z-index: 0;
+        }
+
+        #ar-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 2;
+            pointer-events: none;
+        }
+
+        #direction-arrow {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            width: 140px;
+            height: 140px;
+            margin: -70px 0 0 -70px;
+            z-index: 10;
+            pointer-events: none;
+            opacity: 1;
+        }
+
+        /* KOMPASSROSE HÖHER POSITIONIERT */
+        #compass-rose {
+            position: fixed;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.82);
+            border-radius: 16px;
+            padding: 10px 14px;
+            display: flex;
+            flex-wrap: nowrap;
+            justify-content: space-between;
+            align-items: center;
+            gap: 6px;
+            width: min(92vw, 620px);
+            z-index: 5;
+            overflow: hidden;
+            border: 1px solid rgba(255, 180, 0, 0.25);
+            box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+        }
+
+        .compass-point {
+            flex: 1 1 auto;
+            text-align: center;
+            padding: 6px 4px;
+            border-radius: 10px;
+            font-size: 0.85em;
+            transition: all 0.25s ease;
+            color: #ddd;
+            white-space: nowrap;
+        }
+
+        .compass-point.active {
+            background: #ffb400;
+            color: #000;
+            font-weight: bold;
+        }
+
+        /* INFO-PANEL LINKS */
+        #celestial-info {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.9);
+            border-radius: 12px;
+            padding: 15px;
+            z-index: 900;
+            border: 1px solid rgba(255, 180, 0, 0.3);
+            min-width: 200px;
+            transition: all 0.3s ease;
+        }
+
+        #celestial-info.minimized {
+            height: 40px;
+            overflow: hidden;
+            padding: 8px 15px;
+        }
+
+        #celestial-info.minimized .info-content {
+            display: none;
+        }
+
+        /* HIMMELSKÖRPER-AUSWAHL RECHTS */
+        #celestial-selector {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.9);
+            border-radius: 12px;
+            padding: 15px;
+            z-index: 900;
+            border: 1px solid rgba(255, 180, 0, 0.3);
+            min-width: 150px;
+            transition: all 0.3s ease;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        #celestial-selector.minimized {
+            height: 40px;
+            overflow: hidden;
+            padding: 8px 15px;
+        }
+
+        #celestial-selector.minimized .selector-content {
+            display: none;
+        }
+
+        .selector-button {
+            display: block;
+            width: 100%;
+            margin-bottom: 6px;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 180, 0, 0.3);
+            border-radius: 6px;
+            color: #fff;
+            font-size: 0.8em;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+        }
+
+        .selector-button.active {
+            background: #ffb400;
+            color: #000;
+            font-weight: bold;
+        }
+
+        .selector-button:hover {
+            background: rgba(255, 180, 0, 0.2);
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+            font-size: 0.9em;
+        }
+
+        .info-label {
+            color: #ffb400;
+            font-weight: bold;
+        }
+
+        .info-value {
+            color: #fff;
+            font-family: monospace;
+            transition: all 0.3s ease;
+        }
+
+        #sensor-mini {
+            position: fixed;
+            bottom: 20px;
+            left: 80px;
+            background: rgba(0, 0, 0, 0.8);
+            border-radius: 8px;
+            padding: 8px 12px;
+            z-index: 15;
+            font-size: 0.8em;
+            border: 1px solid rgba(255, 180, 0, 0.3);
+            transition: all 0.3s ease;
+            max-width: calc(100vw - 160px);
+        }
+
+        #sensor-mini.minimized {
+            height: 35px;
+            overflow: hidden;
+            padding: 6px 12px;
+        }
+
+        #sensor-mini.minimized .sensor-content {
+            display: none;
+        }
+
+        .sensor-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 3px;
+            min-width: 150px;
+        }
+
+        .sensor-label {
+            color: #ffb400;
+            font-weight: bold;
+        }
+
+        .sensor-value {
+            color: #fff;
+            font-family: monospace;
+        }
+
+        .panel-header-with-minimize {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding-bottom: 5px;
+            border-bottom: 1px solid rgba(255, 180, 0, 0.3);
+            position: sticky;
+            top: 0;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 10;
+        }
+
+        .minimize-btn {
+            background: none;
+            border: none;
+            color: #ffb400;
+            font-size: 1.1em;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 3px;
+            transition: background 0.3s;
+        }
+
+        .minimize-btn:hover {
+            background: rgba(255, 180, 0, 0.2);
+        }
+
+        .panel {
+            position: fixed;
+            background: rgba(0, 0, 0, 0.9);
+            border-radius: 12px;
+            padding: 15px;
+            z-index: 1000;
+            transition: all 0.3s ease;
+            border: 1px solid rgba(255, 180, 0, 0.3);
+            max-width: 90vw;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .panel.minimized {
+            transform: scale(0.1);
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        #settings-panel {
+            top: 100px;
+            bottom: 80px;
+            right: 20px;
+            width: 320px;
+            max-height: calc(100vh - 120px);
+            overflow-y: auto;
+        }
+
+        #debug-panel {
+            top: 380px;
+            bottom: 80px;
+            right: 20px;
+            width: 300px;
+            max-height: calc(100vh - 400px);
+            overflow-y: auto;
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            font-weight: bold;
+            color: #ffb400;
+            border-bottom: 1px solid rgba(255, 180, 0, 0.3);
+            padding-bottom: 8px;
+            position: sticky;
+            top: 0;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 10;
+        }
+
+        .panel-toggle {
+            background: none;
+            border: none;
+            color: #ffb400;
+            font-size: 1.2em;
+            cursor: pointer;
+            padding: 5px;
+            border-radius: 5px;
+            transition: background 0.3s;
+        }
+
+        .panel-toggle:hover {
+            background: rgba(255, 180, 0, 0.2);
+        }
+
+        .control-group {
+            margin-bottom: 12px;
+            border: 1px solid rgba(255, 180, 0, 0.2);
+            border-radius: 8px;
+            padding: 8px;
+        }
+
+        .control-group h4 {
+            color: #ffb400;
+            margin-bottom: 8px;
+            font-size: 0.9em;
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 0.85em;
+        }
+
+        input[type="checkbox"] {
+            margin-right: 8px;
+            transform: scale(1.2);
+        }
+
+        input[type="range"] {
+            width: 100%;
+            margin: 5px 0;
+        }
+
+        select {
+            width: 100%;
+            padding: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 180, 0, 0.5);
+            border-radius: 5px;
+            color: #fff;
+            font-size: 0.9em;
+        }
+
+        #calibrate-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #ffb400;
+            color: #000;
+            border: none;
+            padding: 12px;
+            border-radius: 50%;
+            font-weight: bold;
+            font-size: 0.8em;
+            cursor: pointer;
+            z-index: 1000;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(255, 180, 0, 0.4);
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            line-height: 1;
+        }
+
+        #calibrate-btn:hover {
+            background: #ffc533;
+            transform: scale(1.1);
+        }
+
+        #calibrate-btn.calibrating {
+            background: #ff6b6b;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        #camera-toggle {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: #f44336;
+            color: #fff;
+            border: none;
+            padding: 12px;
+            border-radius: 50%;
+            font-size: 1.2em;
+            cursor: pointer;
+            z-index: 1000;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(244, 67, 54, 0.4);
+            width: 50px;
+            height: 50px;
+        }
+
+        #camera-toggle.enabled {
+            background: #4CAF50;
+            box-shadow: 0 4px 15px rgba(76, 175, 80, 0.4);
+        }
+
+        #camera-toggle:hover {
+            transform: scale(1.1);
+        }
+
+        /* HOVER-TOOLTIP FÜR HIMMELSKÖRPER */
+        #celestial-tooltip {
+            position: fixed;
+            background: rgba(0, 0, 0, 0.95);
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 0.9em;
+            font-weight: bold;
+            border: 1px solid rgba(255, 180, 0, 0.5);
+            z-index: 50;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.7);
+        }
+
+        #celestial-tooltip.visible {
+            opacity: 1;
+        }
+
+        /* CROSSHAIR FÜR TOOLTIP-ERKENNUNG */
+        #crosshair {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            width: 30px;
+            height: 30px;
+            margin: -15px 0 0 -15px;
+            z-index: 15;
+            pointer-events: none;
+        }
+
+        #crosshair::before,
+        #crosshair::after {
+            content: '';
+            position: absolute;
+            background: rgba(255, 180, 0, 0.8);
+        }
+
+        #crosshair::before {
+            top: 50%;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            margin-top: -1px;
+        }
+
+        #crosshair::after {
+            left: 50%;
+            top: 0;
+            width: 2px;
+            height: 100%;
+            margin-left: -1px;
+        }
+
+        @media (max-width: 768px) {
+            .panel {
+                width: 90vw !important;
+                left: 5vw !important;
+                right: 5vw !important;
+            }
+            
+            #settings-panel {
+            top: 100px;
+            bottom: 80px;
+            right: 20px;
+            width: 320px;
+            max-height: calc(100vh - 120px);
+            overflow-y: auto;
+        }
+
+        .debug-value {
+            font-family: monospace;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 2px 6px;
+            border-radius: 3px;
+            margin: 2px 0;
+            font-size: 0.8em;
+        }
+
+        #horizon-line {
+            position: fixed;
+            left: 0;
+            width: 100vw;
+            height: 2px;
+            background: rgba(255, 180, 0, 0.5);
+            z-index: 3;
+            pointer-events: none;
+            transition: top 0.1s;
+        }
+
+        #celestial-path {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 3;
+            pointer-events: none;
+        }
+
+        /* STERNE-OVERLAY */
+        #stars-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1.5;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <!-- Fallback-Hintergrund -->
+    <div id="fallback-bg"></div>
+    
+    <!-- Kamera-Stream -->
+    <video id="camera-stream" autoplay playsinline muted class="disabled"></video>
+    
+    <!-- Sterne-Overlay -->
+    <canvas id="stars-overlay"></canvas>
+    
+    <!-- AR-Overlay für 360°-Himmelsobjekte -->
+    <canvas id="ar-overlay"></canvas>
+    
+    <!-- 360°-Himmelskörper-Pfad -->
+    <div id="path-mode-badge" style="position: fixed; top: 92px; left: 50%; transform: translateX(-50%); z-index: 150; padding: 6px 10px; border-radius: 12px; background: rgba(0,0,0,0.45); color: white; font-size: 12px; backdrop-filter: blur(4px);">24h / 360° Bahn</div>
+    <svg id="celestial-path"></svg>
+    
+    <!-- Horizont-Linie -->
+    <div id="horizon-line"></div>
+    
+    <!-- 3D-Richtungspfeil -->
+    <canvas id="direction-arrow" width="140" height="140"></canvas>
+    
+    <!-- Crosshair für Tooltip-Erkennung -->
+    <div id="crosshair"></div>
+    
+    <!-- Kompassrose (höher positioniert) -->
+    <div id="compass-rose"></div>
+    
+    <!-- Tooltip für Himmelskörper -->
+    <div id="celestial-tooltip"></div>
+    
+    <!-- Himmelskörper-Info LINKS -->
+    <div id="celestial-info" class="minimized">
+        <div class="panel-header-with-minimize">
+            <span style="color: #ffb400; font-weight: bold;" id="info-title">🌞 Sonneninfo</span>
+            <button class="minimize-btn" onclick="toggleMinimize('celestial-info')">▼</button>
+        </div>
+        <div class="info-content">
+            <div class="info-row">
+                <span class="info-label">Zeit:</span>
+                <span class="info-value" id="current-time">--:--:--</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Azimut:</span>
+                <span class="info-value" id="celestial-azimuth">--°</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Höhe:</span>
+                <span class="info-value" id="celestial-elevation">--°</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Im Sichtfeld:</span>
+                <span class="info-value" id="celestial-in-view">--</span>
+            </div>
+            <div class="info-row" id="rise-set-row">
+                <span class="info-label" id="rise-label">Aufgang:</span>
+                <span class="info-value" id="rise-time">--:--</span>
+            </div>
+            <div class="info-row" id="set-row">
+                <span class="info-label" id="set-label">Untergang:</span>
+                <span class="info-value" id="set-time">--:--</span>
+            </div>
+            <div class="info-row" id="phase-row" style="display: none;">
+                <span class="info-label">Mondphase:</span>
+                <span class="info-value" id="moon-phase">--</span>
+            </div>
+            <div class="info-row" id="magnitude-row" style="display: none;">
+                <span class="info-label">Helligkeit:</span>
+                <span class="info-value" id="magnitude">--</span>
+            </div>
+            <div class="info-row" id="distance-row" style="display: none;">
+                <span class="info-label">Entfernung:</span>
+                <span class="info-value" id="distance">--</span>
+            </div>
+            <div class="info-row" id="velocity-row" style="display: none;">
+                <span class="info-label">Geschwindigkeit:</span>
+                <span class="info-value" id="velocity">--</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Himmelskörper-Auswahl RECHTS - VERBESSERTER TEXT -->
+    <div id="celestial-selector" class="minimized">
+        <div class="panel-header-with-minimize">
+            <span style="color: #ffb400; font-weight: bold;">Sonnensystem</span>
+            <button class="minimize-btn" onclick="toggleMinimize('celestial-selector')">▼</button>
+        </div>
+        <div class="selector-content">
+            <button class="selector-button active" id="sun-btn" onclick="selectCelestialBody('sun')">
+                🌞 Sonne
+            </button>
+            <button class="selector-button" id="moon-btn" onclick="selectCelestialBody('moon')">
+                🌙 Mond
+            </button>
+            <button class="selector-button" id="mercury-btn" onclick="selectCelestialBody('mercury')">
+                🔘 Merkur
+            </button>
+            <button class="selector-button" id="venus-btn" onclick="selectCelestialBody('venus')">
+                🟡 Venus
+            </button>
+            <button class="selector-button" id="mars-btn" onclick="selectCelestialBody('mars')">
+                🔴 Mars
+            </button>
+            <button class="selector-button" id="jupiter-btn" onclick="selectCelestialBody('jupiter')">
+                🪐 Jupiter
+            </button>
+            <button class="selector-button" id="saturn-btn" onclick="selectCelestialBody('saturn')">
+                🟠 Saturn
+            </button>
+            <button class="selector-button" id="uranus-btn" onclick="selectCelestialBody('uranus')">
+                🔵 Uranus
+            </button>
+            <button class="selector-button" id="neptune-btn" onclick="selectCelestialBody('neptune')">
+                🟣 Neptun
+            </button>
+            <button class="selector-button" id="europa-clipper-btn" onclick="selectCelestialBody('europa-clipper')">
+                🛰️ Europa Clipper
+            </button>
+        </div>
+    </div>
+    
+    
+    <!-- Sensor Readout Panel (Popup) -->
+    <div id="sensors-readout-panel" class="panel minimized" style="top: 200px; left: 20px; width: 300px; max-height: 50vh;">
+        <div class="panel-header">
+            <span style="color: #ffb400; font-weight: bold;">📱 Sensor Details</span>
+            <button class="panel-toggle" onclick="togglePanel('sensors-readout-panel')">▼</button>
+        </div>
+        <div class="panel-content">
+            <div class="sensor-row">
+                <span class="sensor-label">Kompass:</span>
+                <span class="sensor-value" id="sensor-compass">--°</span>
+            </div>
+            <div class="sensor-row">
+                <span class="sensor-label">Neigung:</span>
+                <span class="sensor-value" id="sensor-pitch">--°</span>
+            </div>
+            <div class="sensor-row">
+                <span class="sensor-label">Rolle:</span>
+                <span class="sensor-value" id="sensor-roll">--°</span>
+            </div>
+            <div class="sensor-row">
+                <span class="sensor-label">Azimut-Diff:</span>
+                <span class="sensor-value" id="sensor-azimuth-diff">--°</span>
+            </div>
+            <div class="sensor-row">
+                <span class="sensor-label">Pitch-Diff:</span>
+                <span class="sensor-value" id="sensor-pitch-diff">--°</span>
+            </div>
+            <div class="sensor-row">
+                <span class="sensor-label">Genauigkeit:</span>
+                <span class="sensor-value" id="sensor-accuracy">--</span>
+            </div>
+        </div>
+    </div>
+
+    
+    <!-- Kalibrierungs-Button -->
+    <button id="calibrate-btn" onclick="toggleCalibration()" title="Kalibrieren">🎯<br>kal.</button>
+    
+        <!-- Kamera-Button -->
+    <button id="camera-toggle" onclick="toggleCamera()">📷</button>
+
+    
+    <!-- Settings Button -->
+    <button id="settings-btn" onclick="togglePanel('settings-panel')" title="Einstellungen" style="position: fixed; bottom: 20px; left: 80px; background: #333; color: #ffb400; border: 1px solid #ffb400; padding: 12px; border-radius: 50%; font-size: 1.2em; cursor: pointer; z-index: 1000; width: 50px; height: 50px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;">⚙️</button>
+
+    <!-- Sensors Readout Button -->
+    <button id="sensors-btn" onclick="togglePanel('sensors-readout-panel')" title="Sensoren" style="position: fixed; bottom: 20px; left: 140px; background: #333; color: #00f3ff; border: 1px solid #00f3ff; padding: 12px; border-radius: 50%; font-size: 1.2em; cursor: pointer; z-index: 1000; width: 50px; height: 50px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;">📱</button>
+
+    
+    <!-- Info-Button -->
+    <button id="app-info-btn" onclick="togglePanel('app-info-panel')" title="Informationen" style="position: fixed; bottom: 20px; right: 140px; background: #333; color: #ffb400; border: 1px solid #ffb400; padding: 12px; border-radius: 50%; font-size: 1.2em; font-weight: bold; cursor: pointer; z-index: 1000; width: 50px; height: 50px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; line-height: 1;">ℹ️</button>
+
+    <!-- Reset Calibration Button -->
+    <button id="reset-cal-btn" onclick="resetCalibration()" title="Kalibrierung zurücksetzen" style="display: none; position: fixed; bottom: 20px; right: 80px; background: #ff3333; color: #fff; border: none; padding: 12px; border-radius: 50%; font-size: 1.2em; font-weight: bold; cursor: pointer; z-index: 1000; width: 50px; height: 50px; box-shadow: 0 4px 15px rgba(255, 51, 51, 0.4); justify-content: center; align-items: center;">↺</button>
+
+    
+    
+    <!-- Info Panel -->
+    <div id="app-info-panel" class="panel minimized" style="top: 200px; right: 20px; width: 300px; text-align: left; font-size: 0.9em; line-height: 1.5;">
+        <div class="panel-header">
+            <span>ℹ️ App Info</span>
+            <button class="panel-toggle" onclick="togglePanel('app-info-panel')">▼</button>
+        </div>
+        <div class="panel-content" style="color: #fff;">
+            <p style="margin-bottom: 10px;"><strong>AR Himmelsnavigator</strong></p>
+            <p style="margin-bottom: 5px;"><strong>Version:</strong> v1.1</p>
+            <p style="margin-bottom: 5px;"><strong>Datum:</strong> 10.04.2026</p>
+            <p style="margin-bottom: 15px;"><strong>Developed by:</strong> Sebastian Rößer</p>
+
+            <p style="margin-bottom: 5px;"><a href="https://github.com/basecore/ar-himmelsnavigator" target="_blank" style="color: #00f3ff; text-decoration: none;">🔗 GitHub Repository</a></p>
+            <p style="margin-bottom: 10px;"><a href="https://github.com/basecore/ar-himmelsnavigator/issues" target="_blank" style="color: #ff3333; text-decoration: none;">🐞 GitHub Issues</a></p>
+        </div>
+    </div>
+
+    <!-- Sensor-Panel -->
+    <div id="settings-panel" class="panel minimized">
+        <div class="panel-header">
+            <span>🧭 Einstellungen</span>
+            <button class="panel-toggle" onclick="togglePanel('settings-panel')">▼</button>
+        </div>
+        <div class="panel-content">
+            <div class="control-group">
+                <h4>📹 Kamera</h4>
+                <label><input type="checkbox" id="camera-enabled"> Kamera aktiviert</label>
+                <label><input type="checkbox" id="auto-camera-off"> Auto-Aus nach 5min</label>
+            </div>
+
+            <div class="control-group">
+                <h4>⭐ Sternenkarte</h4>
+                <label><input type="checkbox" id="show-stars" checked> Sterne anzeigen (100 hellste)</label>
+                <label>Sterne-Helligkeit: <input type="range" id="star-brightness" min="0.1" max="1" value="0.6" step="0.1">
+                <span id="star-brightness-value">0.6</span></label>
+                <label>Sterne-Größe: <input type="range" id="star-size" min="1" max="5" value="2" step="1">
+                <span id="star-size-value">2px</span></label>
+                <label><input type="checkbox" id="show-star-names" checked> Sternnamen anzeigen</label>
+            </div>
+
+            <div class="control-group">
+                <h4>🌌 Himmelskörper</h4>
+                <label><input type="checkbox" id="show-all-celestial" checked> Alle Himmelskörper gleichzeitig anzeigen</label>
+                <label><input type="checkbox" id="show-celestial-names" checked> Namen beim Crosshair anzeigen</label>
+                <label>Himmelskörper-Größe: <input type="range" id="celestial-size" min="0.3" max="1.5" value="0.5" step="0.1">
+                <span id="celestial-size-value">0.5</span></label>
+            </div>
+
+            <div class="control-group">
+                <h4>👁️ 360°-Sichtfeld</h4>
+                <label>Sichtfeld (FOV): <input type="range" id="fov-range" min="30" max="120" value="60" step="5">
+                <span id="fov-value">60°</span></label>
+                <label><input type="checkbox" id="show-celestial-in-fov" checked> Himmelskörper nur im Sichtfeld anzeigen</label>
+                <label><input type="checkbox" id="show-path-in-fov" checked> Laufbahn nur im Sichtfeld</label>
+                <label><input type="checkbox" id="show-horizon" checked> Horizont-Linie</label>
+            </div>
+
+            <div class="control-group">
+                <h4>🎯 Farbige Pfeile</h4>
+                <label><input type="checkbox" id="show-3d-arrow" checked disabled> 3D-Pfeil (immer an)</label>
+                <label><input type="checkbox" id="show-elevation-indicator" checked> Höhenwinkel-Indikator</label>
+                <label><input type="checkbox" id="separate-sensors" checked> Getrennte Sensoren (🔵Kompass / 🔴Neigung)</label>
+                <label><input type="checkbox" id="dynamic-length" checked> Dynamische Pfeillänge</label>
+                <label>Pfeil-Sensitivität: <input type="range" id="arrow-sensitivity" min="0.5" max="3" value="1" step="0.1">
+                <span id="arrow-sens-value">1.0</span></label>
+            </div>
+
+            <div class="control-group">
+                <h4>📐 3D-Orientierung</h4>
+                <label><input type="checkbox" id="use-altitude" checked> Höhenwinkel verwenden</label>
+                <label>Pitch-Sensitivität: <input type="range" id="pitch-sensitivity" min="0.5" max="3" value="1" step="0.1">
+                <span id="pitch-value">1.0</span></label>
+            </div>
+            
+            <div class="control-group">
+                <h4>🎯 Gimbal Lock Protection</h4>
+                <label><input type="checkbox" id="gimbal-lock-protection" checked> Gimbal Lock Schutz aktiviert</label>
+                <label>Dead Zone: <input type="range" id="dead-zone-range" min="3" max="15" value="8" step="1">
+                <span id="dead-zone-value">±8°</span></label>
+                <label>Kritische Zone: <input type="range" id="critical-zone-range" min="1" max="5" value="3" step="1">
+                <span id="critical-zone-value">±3°</span></label>
+            </div>
+            
+            <div class="control-group">
+                <h4>🔄 Kompass-Korrekturen</h4>
+                <label><input type="checkbox" id="use-advanced-sensor" checked> Android-Sensor (AbsoluteOrientation)</label>
+                <label><input type="checkbox" id="invert-compass"> Kompass invertieren</label>
+                <label><input type="checkbox" id="reverse-compass"> Kompass umkehren</label>
+                <label>Manueller Offset: <input type="range" id="manual-offset" min="-180" max="180" value="0" step="1">
+                <span id="offset-value">0°</span></label>
+            </div>
+            
+            <div class="control-group">
+                <h4>⚙️ Glättung</h4>
+                <label>Glättung: <input type="range" id="smoothing-factor" min="1" max="20" value="8">
+                <span id="smoothing-value">8</span></label>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Debug-Panel -->
+    <div id="debug-panel" class="panel minimized">
+        <div class="panel-header">
+            <span>🔧 Debug</span>
+            <button class="panel-toggle" onclick="togglePanel('debug-panel')">▼</button>
+        </div>
+        <div class="panel-content">
+            <div class="control-group">
+                <label><input type="checkbox" id="debug-mode"> Debug-Modus</label>
+            </div>
+            <div id="debug-values"></div>
+        </div>
+    </div>
+
+    <script>
+
+        // ===== DATEN LOKAL (aus coordinates.js) =====
+        let clipperCoordinates = [];
+        let earthCoordinates = [];
+
+        window.addEventListener('DOMContentLoaded', () => {
+            selectCelestialBody('europa-clipper');
+
+            if (typeof bodies !== 'undefined') {
+                if (bodies['Clipper'] && bodies['Clipper'].coordinates) {
+                    clipperCoordinates = bodies['Clipper'].coordinates;
+                    console.log("Clipper-Koordinaten geladen:", clipperCoordinates.length);
+                }
+                if (bodies['Earth'] && bodies['Earth'].coordinates) {
+                    earthCoordinates = bodies['Earth'].coordinates;
+                    console.log("Erde-Koordinaten geladen:", earthCoordinates.length);
+                }
+            } else {
+                console.warn("coordinates.js nicht gefunden. Lade keine Offline-Daten.");
+            }
+        });
+
+        function interpolateCoordinate(coordsArray, targetDate) {
+            if (!coordsArray || coordsArray.length === 0) return null;
+
+            const targetTime = targetDate.getTime();
+            let before = coordsArray[0];
+            let after = coordsArray[coordsArray.length - 1];
+
+            for (let i = 0; i < coordsArray.length - 1; i++) {
+                const d1 = new Date(coordsArray[i].date).getTime();
+                const d2 = new Date(coordsArray[i+1].date).getTime();
+
+                if (targetTime >= d1 && targetTime <= d2) {
+                    before = coordsArray[i];
+                    after = coordsArray[i+1];
+                    const factor = (targetTime - d1) / (d2 - d1);
+                    return {
+                        x: before.x + (after.x - before.x) * factor,
+                        y: before.y + (after.y - before.y) * factor,
+                        z: before.z + (after.z - before.z) * factor
+                    };
+                }
+            }
+            return targetTime < new Date(coordsArray[0].date).getTime() ? before : after;
+        }
+
+        // ===== GLOBALE VARIABLEN =====
+        let userLocation = { lat: null, lon: null };
+        let sunPosition = { azimuth: 0, altitude: 0 };
+        let moonPosition = { azimuth: 0, altitude: 0 };
+        let mercuryPosition = { azimuth: 0, altitude: 0, magnitude: 0, distance: 0 };
+        let venusPosition = { azimuth: 0, altitude: 0, magnitude: 0, distance: 0 };
+        let marsPosition = { azimuth: 0, altitude: 0, magnitude: 0, distance: 0 };
+        let jupiterPosition = { azimuth: 0, altitude: 0, magnitude: 0, distance: 0 };
+        let saturnPosition = { azimuth: 0, altitude: 0, magnitude: 0, distance: 0 };
+        let uranusPosition = { azimuth: 0, altitude: 0, magnitude: 0, distance: 0 };
+        let neptunePosition = { azimuth: 0, altitude: 0, magnitude: 0, distance: 0 };
+        let europaClipperPosition = { azimuth: 0, altitude: 0, magnitude: 0, distance: 0, velocity: 0 };
+        let currentCelestialBody = 'europa-clipper';
+        let deviceOrientation = { azimuth: 0, pitch: 0, roll: 0 };
+        let calibrationOffset = 0;
+        let isCalibrating = false;
+        let debugMode = false;
+        let screenOrientation = 'portrait';
+        let cameraStream = null;
+        let cameraEnabled = false;
+        let autoCameraOffTimer = null;
+        let realtimeUpdateInterval = null;
+        let updateIntervalMs = 1000; // 1 Sekunde Update-Rate für ruckelfreie Info // 10 Sekunden für Himmelskörper
+        
+        // **STERNE-KONFIGURATION MIT TOOLTIPS**
+        let starsConfig = {
+            showStars: true,
+            brightness: 0.6,
+            size: 2,
+            showNames: true // Standardmäßig aktiviert für Tooltips
+        };
+        
+        // **HIMMELSKÖRPER-KONFIGURATION - KLEINERE GRÖSSE**
+        let celestialConfig = {
+            showAllCelestial: true,
+            showNames: true,
+            size: 0.5 // Auf die Hälfte reduziert
+        };
+        
+        // **GIMBAL LOCK PROTECTION KONFIGURATION**
+        let gimbalLockConfig = {
+            enabled: true,
+            deadZoneStart: -8,
+            deadZoneEnd: 8,
+            criticalZoneStart: -3,
+            criticalZoneEnd: 3,
+            lastValidHeading: null,
+            smoothingIntensity: 0.95,
+            transitionFactor: 0.3
+        };
+        
+        // **360°-SICHTFELD-KONFIGURATION**
+        let viewConfig = {
+            fieldOfView: 60,
+            showCelestialInFOV: true,
+            showPathInFOV: true,
+            showHorizon: true
+        };
+        
+        // **3D-PFEIL-KONFIGURATION**
+        let arrowConfig = {
+            show3DArrow: true,
+            showElevationIndicator: true,
+            arrowSensitivity: 1.0,
+            separateSensors: true,
+            dynamicLength: true
+        };
+        
+        // **KONFIGURATION**
+        let compassConfig = {
+            useAdvancedSensor: true,
+            invertCompass: false,
+            reverseCompass: false,
+            manualOffset: 0,
+            useWebkit: true,
+            useAbsolute: true,
+            smoothingFactor: 8,
+            cameraEnabled: false,
+            autoCameraOff: false,
+            useAltitude: true,
+            pitchSensitivity: 1.0
+        };
+        
+        // Glättungs-Arrays
+        let smoothingBuffers = {
+            azimuth: [],
+            pitch: [],
+            roll: []
+        };
+        
+        // Himmelsrichtungen
+        const compassDirections = [
+            { name: 'N', azimuth: 0 },
+            { name: 'NO', azimuth: 45 },
+            { name: 'O', azimuth: 90 },
+            { name: 'SO', azimuth: 135 },
+            { name: 'S', azimuth: 180 },
+            { name: 'SW', azimuth: 225 },
+            { name: 'W', azimuth: 270 },
+            { name: 'NW', azimuth: 315 }
+        ];
+
+        // **100 HELLSTE STERNE MIT KOORDINATEN**
+        const brightestStars = [
+            {name: "Sirius", ra: 101.287, dec: -16.716, mag: -1.46},
+            {name: "Canopus", ra: 95.988, dec: -52.696, mag: -0.74},
+            {name: "Arcturus", ra: 213.915, dec: 19.182, mag: -0.05},
+            {name: "Vega", ra: 279.234, dec: 38.784, mag: 0.03},
+            {name: "Capella", ra: 79.172, dec: 45.998, mag: 0.08},
+            {name: "Rigel", ra: 78.634, dec: -8.202, mag: 0.13},
+            {name: "Procyon", ra: 114.826, dec: 5.225, mag: 0.34},
+            {name: "Betelgeuse", ra: 88.793, dec: 7.407, mag: 0.50},
+            {name: "Achernar", ra: 24.428, dec: -57.237, mag: 0.46},
+            {name: "Hadar", ra: 210.956, dec: -60.373, mag: 0.61},
+            {name: "Altair", ra: 297.696, dec: 8.868, mag: 0.77},
+            {name: "Aldebaran", ra: 68.980, dec: 16.509, mag: 0.85},
+            {name: "Antares", ra: 247.352, dec: -26.432, mag: 1.09},
+            {name: "Spica", ra: 201.298, dec: -11.161, mag: 1.04},
+            {name: "Pollux", ra: 116.329, dec: 28.026, mag: 1.14},
+            {name: "Fomalhaut", ra: 344.413, dec: -29.622, mag: 1.16},
+            {name: "Deneb", ra: 310.358, dec: 45.280, mag: 1.25},
+            {name: "Mimosa", ra: 191.930, dec: -59.689, mag: 1.25},
+            {name: "Regulus", ra: 152.093, dec: 11.967, mag: 1.35},
+            {name: "Adhara", ra: 104.656, dec: -28.972, mag: 1.50},
+            {name: "Castor", ra: 113.650, dec: 31.888, mag: 1.57},
+            {name: "Gacrux", ra: 187.791, dec: -57.113, mag: 1.63},
+            {name: "Bellatrix", ra: 81.283, dec: 6.350, mag: 1.64},
+            {name: "Elnath", ra: 84.411, dec: 28.608, mag: 1.68},
+            {name: "Miaplacidus", ra: 138.300, dec: -69.717, mag: 1.68},
+            {name: "Alnilam", ra: 84.053, dec: -1.202, mag: 1.70},
+            {name: "Alnair", ra: 332.058, dec: -46.961, mag: 1.74},
+            {name: "Alioth", ra: 193.507, dec: 55.960, mag: 1.77},
+            {name: "Alnitak", ra: 85.190, dec: -1.943, mag: 1.79},
+            {name: "Dubhe", ra: 165.932, dec: 61.751, mag: 1.79},
+            {name: "Mirfak", ra: 51.081, dec: 49.861, mag: 1.80},
+            {name: "Wezen", ra: 107.098, dec: -26.393, mag: 1.84},
+            {name: "Sargas", ra: 264.330, dec: -42.998, mag: 1.87},
+            {name: "Kaus Australis", ra: 276.043, dec: -34.385, mag: 1.85},
+            {name: "Avior", ra: 125.628, dec: -59.510, mag: 1.86},
+            {name: "Alkaid", ra: 206.885, dec: 49.313, mag: 1.86},
+            {name: "Menkalinan", ra: 89.882, dec: 44.947, mag: 1.90},
+            {name: "Atria", ra: 253.415, dec: -69.028, mag: 1.91},
+            {name: "Alhena", ra: 99.428, dec: 16.399, mag: 1.93},
+            {name: "Peacock", ra: 306.412, dec: -56.735, mag: 1.94},
+            {name: "Alsephina", ra: 158.200, dec: -0.596, mag: 2.06},
+            {name: "Mirzam", ra: 95.674, dec: -17.956, mag: 1.98},
+            {name: "Polaris", ra: 37.946, dec: 89.264, mag: 1.98},
+            {name: "Alphard", ra: 141.897, dec: -8.658, mag: 1.98},
+            {name: "Mintaka", ra: 83.002, dec: -0.299, mag: 2.23},
+            {name: "Scheat", ra: 345.944, dec: 28.083, mag: 2.42},
+            {name: "Almaak", ra: 31.793, dec: 42.330, mag: 2.26},
+            {name: "Rasalgethi", ra: 258.662, dec: 14.390, mag: 3.48},
+            {name: "Tau Ceti", ra: 26.017, dec: -15.937, mag: 3.50},
+            {name: "Delta Pavonis", ra: 306.412, dec: -66.203, mag: 3.56},
+            {name: "Alphecca", ra: 233.672, dec: 26.715, mag: 2.23},
+            {name: "Alpheratz", ra: 2.097, dec: 29.091, mag: 2.06},
+            {name: "Ankaa", ra: 6.571, dec: -42.306, mag: 2.39},
+            {name: "Schedar", ra: 10.127, dec: 56.537, mag: 2.23},
+            {name: "Diphda", ra: 10.897, dec: -17.987, mag: 2.04},
+            {name: "Acamar", ra: 44.565, dec: -40.305, mag: 2.88},
+            {name: "Menkar", ra: 45.570, dec: 4.090, mag: 2.54},
+            {name: "Mirach", ra: 17.433, dec: 35.620, mag: 2.06},
+            {name: "Hamal", ra: 31.793, dec: 23.462, mag: 2.00},
+            {name: "Algol", ra: 47.042, dec: 40.956, mag: 2.12},
+            {name: "Electra", ra: 56.871, dec: 24.113, mag: 3.70},
+            {name: "Taygeta", ra: 56.302, dec: 24.467, mag: 4.30},
+            {name: "Maia", ra: 56.457, dec: 24.368, mag: 3.86},
+            {name: "Asterope", ra: 56.476, dec: 24.554, mag: 5.76},
+            {name: "Celaeno", ra: 56.631, dec: 24.289, mag: 5.44},
+            {name: "Atlas", ra: 56.871, dec: 24.053, mag: 3.62},
+            {name: "Pleione", ra: 57.297, dec: 24.136, mag: 5.09},
+            {name: "Alcyone", ra: 56.871, dec: 24.105, mag: 2.87},
+            {name: "Merope", ra: 56.582, dec: 23.948, mag: 4.17},
+            {name: "Alnath", ra: 84.411, dec: 28.608, mag: 1.68},
+            {name: "Ain", ra: 67.154, dec: 19.180, mag: 3.53},
+            {name: "Prima Hyadum", ra: 65.734, dec: 15.627, mag: 3.65},
+            {name: "Secunda Hyadum", ra: 68.520, dec: 15.870, mag: 3.40},
+            {name: "Heka", ra: 81.119, dec: 23.249, mag: 3.35},
+            {name: "Meissa", ra: 83.785, dec: 9.934, mag: 3.33},
+            {name: "Saiph", ra: 86.939, dec: -9.670, mag: 2.09},
+            {name: "Tejat", ra: 95.740, dec: 22.514, mag: 2.87},
+            {name: "Mebsuta", ra: 100.983, dec: 25.131, mag: 3.02},
+            {name: "Wasat", ra: 107.785, dec: 21.982, mag: 3.53},
+            {name: "Gomeisa", ra: 115.562, dec: 8.290, mag: 2.90},
+            {name: "Alhena", ra: 99.428, dec: 16.399, mag: 1.93},
+            {name: "Tejat Posterior", ra: 95.740, dec: 22.514, mag: 2.87},
+            {name: "Propus", ra: 95.988, dec: 22.507, mag: 3.28},
+            {name: "Asellus Borealis", ra: 130.821, dec: 21.468, mag: 4.66},
+            {name: "Asellus Australis", ra: 131.171, dec: 18.154, mag: 3.94},
+            {name: "Acubens", ra: 134.622, dec: 11.858, mag: 4.25},
+            {name: "Regulus", ra: 152.093, dec: 11.967, mag: 1.35},
+            {name: "Algieba", ra: 154.993, dec: 19.842, mag: 2.28},
+            {name: "Zosma", ra: 168.527, dec: 20.524, mag: 2.56},
+            {name: "Chertan", ra: 165.460, dec: 15.430, mag: 3.33},
+            {name: "Denebola", ra: 177.265, dec: 14.572, mag: 2.14},
+            {name: "Zavijava", ra: 185.340, dec: 1.765, mag: 3.60},
+            {name: "Porrima", ra: 190.415, dec: -1.449, mag: 2.74},
+            {name: "Minelauva", ra: 195.544, dec: -0.666, mag: 3.38},
+            {name: "Vindemiatrix", ra: 195.544, dec: 10.959, mag: 2.85},
+            {name: "Heze", ra: 211.670, dec: -6.000, mag: 3.38},
+            {name: "Algorab", ra: 187.466, dec: -16.516, mag: 2.94},
+            {name: "Gienah", ra: 185.986, dec: -17.542, mag: 2.59},
+            {name: "Minkar", ra: 184.006, dec: -23.396, mag: 3.02},
+            {name: "Alchiba", ra: 182.103, dec: -24.729, mag: 4.02},
+            {name: "Kraz", ra: 188.197, dec: -23.397, mag: 2.65}
+        ];
+
+        // **VOLLSTÄNDIGES SONNENSYSTEM MIT FARBIGEN KREIS-EMOJIS**
+        const celestialBodies = {
+            'sun': { name: 'Sonne', symbol: '🌞', color: '#ffb400', shadowColor: '#ffb400', baseSize: 20 },
+            'moon': { name: 'Mond', symbol: '🌙', color: '#ccccff', shadowColor: '#ccccff', baseSize: 18 },
+            'mercury': { name: 'Merkur', symbol: '🔘', color: '#8c7853', shadowColor: '#8c7853', baseSize: 12 },
+            'venus': { name: 'Venus', symbol: '🟡', color: '#ffc649', shadowColor: '#ffc649', baseSize: 16 },
+            'mars': { name: 'Mars', symbol: '🔴', color: '#ff6464', shadowColor: '#ff6464', baseSize: 15 },
+            'jupiter': { name: 'Jupiter', symbol: '🪐', color: '#ffc864', shadowColor: '#ffc864', baseSize: 18 },
+            'saturn': { name: 'Saturn', symbol: '🟠', color: '#fab27b', shadowColor: '#fab27b', baseSize: 17 },
+            'uranus': { name: 'Uranus', symbol: '🔵', color: '#4fd0e7', shadowColor: '#4fd0e7', baseSize: 14 },
+            'neptune': { name: 'Neptun', symbol: '🟣', color: '#4b70dd', shadowColor: '#4b70dd', baseSize: 14 },
+            'europa-clipper': { name: 'Europa Clipper', symbol: '🛰️', color: '#64ffff', shadowColor: '#64ffff', baseSize: 13 }
+        };
+
+        // **TOOLTIP-VERWALTUNG MIT CROSSHAIR-ERKENNUNG FÜR ALLE STERNE**
+        let currentTooltip = null;
+        let tooltipTimeout = null;
+
+        function showTooltip(text) {
+            const tooltip = document.getElementById('celestial-tooltip');
+            tooltip.textContent = text;
+            tooltip.style.left = '50%';
+            tooltip.style.top = '40%';
+            tooltip.style.transform = 'translateX(-50%)';
+            tooltip.classList.add('visible');
+            currentTooltip = text;
+        }
+
+        function hideTooltip() {
+            const tooltip = document.getElementById('celestial-tooltip');
+            tooltip.classList.remove('visible');
+            currentTooltip = null;
+            if (tooltipTimeout) {
+                clearTimeout(tooltipTimeout);
+                tooltipTimeout = null;
+            }
+        }
+
+        function checkCrosshairHover() {
+            if (!celestialConfig.showNames) return;
+            
+            const centerX = window.innerWidth / 2;
+            const centerY = window.innerHeight / 2;
+            const detectionRadius = 25; // Vergrößerter Erkennungsbereich
+            
+            let foundHover = false;
+            
+            // **ALLE SICHTBAREN STERNE PRÜFEN - ERWEITERT**
+            if (starsConfig.showStars && starsConfig.showNames) {
+                brightestStars.forEach(star => {
+                    // Alle sichtbaren Sterne, nicht nur die hellsten
+                    if (star.mag < 4.0) { // Erweitert auf Magnitude 4.0
+                        const starPos = calculateStarPosition(star.ra, star.dec, new Date(), userLocation.lat, userLocation.lon);
+                        
+                        if (starPos.altitude > 0 && isInFieldOfView(starPos.azimuth, starPos.altitude)) {
+                            const azimuthDiff = getShortestAngle(deviceOrientation.azimuth, starPos.azimuth);
+                            const altitudeDiff = starPos.altitude - deviceOrientation.pitch;
+                            
+                            const fovHalf = viewConfig.fieldOfView / 2;
+                            const x = (azimuthDiff / fovHalf) * (window.innerWidth / 2) + window.innerWidth / 2;
+                            const y = (-altitudeDiff / fovHalf) * (window.innerHeight / 2) + window.innerHeight / 2;
+                            
+                            const distance = Math.sqrt((centerX - x) ** 2 + (centerY - y) ** 2);
+                            if (distance < detectionRadius) {
+                                showTooltip(`⭐ ${star.name} (${star.mag.toFixed(1)}m)`);
+                                foundHover = true;
+                            }
+                        }
+                    }
+                });
+            }
+            
+            // **HIMMELSKÖRPER PRÜFEN**
+            if (celestialConfig.showAllCelestial && !foundHover) {
+                Object.keys(celestialBodies).forEach(bodyKey => {
+                    const bodyPos = getPositionForBody(bodyKey);
+                    const body = celestialBodies[bodyKey];
+                    
+                    if (bodyPos && isInFieldOfView(bodyPos.azimuth, bodyPos.altitude)) {
+                        const azimuthDiff = getShortestAngle(deviceOrientation.azimuth, bodyPos.azimuth);
+                        const altitudeDiff = bodyPos.altitude - deviceOrientation.pitch;
+                        
+                        const fovHalf = viewConfig.fieldOfView / 2;
+                        const x = (azimuthDiff / fovHalf) * (window.innerWidth / 2) + window.innerWidth / 2;
+                        const y = (-altitudeDiff / fovHalf) * (window.innerHeight / 2) + window.innerHeight / 2;
+                        
+                        const distance = Math.sqrt((centerX - x) ** 2 + (centerY - y) ** 2);
+                        const size = getBodySize(bodyKey, bodyPos.altitude > -5) * celestialConfig.size;
+                        
+                        if (distance < detectionRadius + size) {
+                            let extraInfo = '';
+                            if (bodyPos.magnitude !== undefined && bodyPos.magnitude < 10) {
+                                extraInfo += ` (${bodyPos.magnitude.toFixed(1)}m)`;
+                            }
+                            if (bodyPos.distance !== undefined && bodyKey !== 'europa-clipper') {
+                                extraInfo += ` ${bodyPos.distance.toFixed(1)}AE`;
+                            }
+                            showTooltip(`${body.symbol} ${body.name}${extraInfo}`);
+                            foundHover = true;
+                        }
+                    }
+                });
+            }
+            
+            if (!foundHover && currentTooltip) {
+                hideTooltip();
+            }
+        }
+
+        function getPositionForBody(bodyKey) {
+            switch(bodyKey) {
+                case 'sun': return sunPosition;
+                case 'moon': return moonPosition;
+                case 'mercury': return mercuryPosition;
+                case 'venus': return venusPosition;
+                case 'mars': return marsPosition;
+                case 'jupiter': return jupiterPosition;
+                case 'saturn': return saturnPosition;
+                case 'uranus': return uranusPosition;
+                case 'neptune': return neptunePosition;
+                case 'europa-clipper': return europaClipperPosition;
+                default: return null;
+            }
+        }
+
+        function getBodySize(bodyKey, isVisible) {
+            const body = celestialBodies[bodyKey];
+            const baseSize = body ? body.baseSize : 15;
+            return baseSize * (isVisible ? 1.2 : 0.8);
+        }
+
+        // **CROSSHAIR-ERKENNUNG ALLE 200MS**
+        
+            document.querySelectorAll('.minimize-btn').forEach(btn => {
+                if(btn.closest('.minimized')) {
+                    btn.textContent = '▼';
+                } else {
+                    btn.textContent = '▲';
+                }
+            });
+setInterval(() => {
+            if (tooltipTimeout) {
+                clearTimeout(tooltipTimeout);
+            }
+            
+            tooltipTimeout = setTimeout(() => {
+                checkCrosshairHover();
+            }, 50);
+        }, 200);
+
+        // ===== STERNE-FUNKTIONEN =====
+        function calculateStarPosition(ra, dec, date, lat, lon) {
+            const J2000 = new Date(2000, 0, 1, 12, 0, 0);
+            const daysSinceJ2000 = (date - J2000) / 86400000;
+            
+            const siderealTime = (280.46061837 + 360.98564736629 * daysSinceJ2000 + lon) % 360;
+            const hourAngle = (siderealTime - ra + 360) % 360;
+            
+            const latRad = lat * Math.PI / 180;
+            const decRad = dec * Math.PI / 180;
+            const haRad = hourAngle * Math.PI / 180;
+            
+            const altitude = Math.asin(
+                Math.sin(latRad) * Math.sin(decRad) + 
+                Math.cos(latRad) * Math.cos(decRad) * Math.cos(haRad)
+            ) * 180 / Math.PI;
+            
+            const azimuth = (Math.atan2(
+                Math.sin(haRad),
+                Math.cos(haRad) * Math.sin(latRad) - Math.tan(decRad) * Math.cos(latRad)
+            ) * 180 / Math.PI + 180) % 360;
+            
+            return { azimuth, altitude };
+        }
+
+        function updateStarsDisplay() {
+            if (!starsConfig.showStars || !userLocation.lat || !userLocation.lon) {
+                const canvas = document.getElementById('stars-overlay');
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                return;
+            }
+            
+            const canvas = document.getElementById('stars-overlay');
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            const now = new Date();
+            
+            brightestStars.forEach(star => {
+                const starPos = calculateStarPosition(star.ra, star.dec, now, userLocation.lat, userLocation.lon);
+                
+                if (starPos.altitude > 0 && isInFieldOfView(starPos.azimuth, starPos.altitude)) {
+                    const azimuthDiff = getShortestAngle(deviceOrientation.azimuth, starPos.azimuth);
+                    const altitudeDiff = starPos.altitude - deviceOrientation.pitch;
+                    
+                    const fovHalf = viewConfig.fieldOfView / 2;
+                    const x = (azimuthDiff / fovHalf) * (window.innerWidth / 2) + window.innerWidth / 2;
+                    const y = (-altitudeDiff / fovHalf) * (window.innerHeight / 2) + window.innerHeight / 2;
+                    
+                    if (x >= 0 && x <= window.innerWidth && y >= 0 && y <= window.innerHeight) {
+                        const brightness = Math.max(0.1, Math.min(1, (6 - star.mag) / 6)) * starsConfig.brightness;
+                        const size = Math.max(1, Math.min(6, (6 - star.mag) / 2)) * starsConfig.size;
+                        
+                        ctx.save();
+                        ctx.globalAlpha = brightness;
+                        ctx.fillStyle = '#ffffff';
+                        ctx.shadowColor = '#ffffff';
+                        ctx.shadowBlur = size;
+                        
+                        ctx.beginPath();
+                        ctx.arc(x, y, size, 0, 2 * Math.PI);
+                        ctx.fill();
+                        
+                        // **NAMEN NUR FÜR HELLSTE STERNE DIREKT ANZEIGEN**
+                        if (starsConfig.showNames && star.mag < 1.5) {
+                            ctx.globalAlpha = 0.7;
+                            ctx.font = '10px Arial';
+                            ctx.textAlign = 'center';
+                            ctx.fillStyle = '#cccccc';
+                            ctx.fillText(star.name, x, y - size - 5);
+                        }
+                        
+                        ctx.restore();
+                    }
+                }
+            });
+        }
+
+        // ===== GIMBAL LOCK PROTECTION FUNKTIONEN =====
+        function applyGimbalLockProtection(currentHeading, pitch) {
+            if (!gimbalLockConfig.enabled) return currentHeading;
+            
+            // Gimbal Lock happens horizontally (pitch near -90 or +90), not vertically (pitch 0)
+            const absPitch = Math.abs(pitch);
+            const isNearHorizontal = absPitch >= (90 - gimbalLockConfig.deadZoneEnd);
+            const isCriticallyHorizontal = absPitch >= (90 - gimbalLockConfig.criticalZoneEnd);
+
+            const isInDeadZone = isNearHorizontal;
+            const isInCriticalZone = isCriticallyHorizontal;
+            
+            if (isInCriticalZone) {
+                if (gimbalLockConfig.lastValidHeading !== null) {
+                    return gimbalLockConfig.lastValidHeading;
+                }
+            } else if (isInDeadZone) {
+                if (gimbalLockConfig.lastValidHeading !== null) {
+                    const transitionFactor = calculateTransitionFactor(pitch);
+                    return interpolateHeading(gimbalLockConfig.lastValidHeading, currentHeading, transitionFactor);
+                }
+            } else {
+                gimbalLockConfig.lastValidHeading = currentHeading;
+            }
+            
+            return currentHeading;
+        }
+
+        function calculateTransitionFactor(pitch) {
+            const absP = Math.abs(pitch);
+            const horizontalDistance = 90 - absP;
+
+            if (horizontalDistance <= gimbalLockConfig.criticalZoneEnd) {
+                return 0;
+            }
+
+            const transitionRange = gimbalLockConfig.deadZoneEnd - gimbalLockConfig.criticalZoneEnd;
+            const distanceFromCritical = horizontalDistance - gimbalLockConfig.criticalZoneEnd;
+
+            return Math.min(1, Math.max(0, distanceFromCritical / transitionRange));
+        }
+
+        function getAdaptiveSmoothingFactor(pitch) {
+            if (!gimbalLockConfig.enabled) return compassConfig.smoothingFactor;
+
+            const absP = Math.abs(pitch);
+            const horizontalDistance = 90 - absP;
+
+            if (horizontalDistance <= gimbalLockConfig.criticalZoneEnd) {
+                return compassConfig.smoothingFactor * 3;
+            } else if (horizontalDistance <= gimbalLockConfig.deadZoneEnd) {
+                return compassConfig.smoothingFactor * 2;
+            } else {
+                return compassConfig.smoothingFactor;
+            }
+        }
+
+        function isInGimbalLockZone(pitch) {
+            // true if horizontal
+            return (90 - Math.abs(pitch)) <= gimbalLockConfig.deadZoneEnd;
+        }
+
+        // ===== VERBESSERTE LOKALE PLANETEN-BERECHNUNG FÜR ALLE PLANETEN =====
+        function calculatePlanetPositionAdvanced(planetName, date, lat, lon) {
+            const daysSinceEpoch = (date - new Date(2000, 0, 1)) / 86400000;
+            const julianDay = 2451545.0 + daysSinceEpoch;
+            
+            let position = { azimuth: 0, altitude: 0, magnitude: 0, distance: 0, velocity: 0 };
+            
+            switch(planetName) {
+                case 'mercury':
+                    const mercuryL = (252.251 + 4.0923344368 * daysSinceEpoch) % 360;
+                    const mercuryEcc = 0.2056;
+                    const mercuryInc = 7.00;
+                    
+                    const mercuryEccentricAnomaly = mercuryL + mercuryEcc * Math.sin(mercuryL * Math.PI / 180) * 180 / Math.PI;
+                    const mercuryDistance = 0.387 * (1 - mercuryEcc * Math.cos(mercuryEccentricAnomaly * Math.PI / 180));
+                    
+                    const mercuryRA = (mercuryEccentricAnomaly + 90) % 360;
+                    const mercuryDec = Math.sin(mercuryInc * Math.PI / 180) * Math.sin(mercuryEccentricAnomaly * Math.PI / 180) * 25;
+                    
+                    const mercuryHA = (mercuryRA - (date.getHours() + date.getMinutes()/60) * 15 + lon) % 360;
+                    position.azimuth = (Math.atan2(Math.sin(mercuryHA * Math.PI / 180), 
+                        Math.cos(mercuryHA * Math.PI / 180) * Math.sin(lat * Math.PI / 180) - 
+                        Math.tan(mercuryDec * Math.PI / 180) * Math.cos(lat * Math.PI / 180)) * 180 / Math.PI + 360) % 360;
+                    position.altitude = Math.asin(Math.sin(lat * Math.PI / 180) * Math.sin(mercuryDec * Math.PI / 180) + 
+                        Math.cos(lat * Math.PI / 180) * Math.cos(mercuryDec * Math.PI / 180) * Math.cos(mercuryHA * Math.PI / 180)) * 180 / Math.PI;
+                    
+                    position.magnitude = -0.42 + 5 * Math.log10(mercuryDistance * Math.sqrt(mercuryDistance * mercuryDistance + 1 - 2 * mercuryDistance * Math.cos((mercuryL - 180) * Math.PI / 180)));
+                    position.distance = mercuryDistance;
+                    position.velocity = 47.9;
+                    break;
+                    
+                case 'venus':
+                    const venusL = (181.979 + 1.6021302244 * daysSinceEpoch) % 360;
+                    const venusEcc = 0.0067;
+                    const venusInc = 3.39;
+                    
+                    const venusEccentricAnomaly = venusL + venusEcc * Math.sin(venusL * Math.PI / 180) * 180 / Math.PI;
+                    const venusDistance = 0.723 * (1 - venusEcc * Math.cos(venusEccentricAnomaly * Math.PI / 180));
+                    
+                    const venusRA = (venusEccentricAnomaly + 90) % 360;
+                    const venusDec = Math.sin(venusInc * Math.PI / 180) * Math.sin(venusEccentricAnomaly * Math.PI / 180) * 25;
+                    
+                    const venusHA = (venusRA - (date.getHours() + date.getMinutes()/60) * 15 + lon) % 360;
+                    position.azimuth = (Math.atan2(Math.sin(venusHA * Math.PI / 180), 
+                        Math.cos(venusHA * Math.PI / 180) * Math.sin(lat * Math.PI / 180) - 
+                        Math.tan(venusDec * Math.PI / 180) * Math.cos(lat * Math.PI / 180)) * 180 / Math.PI + 360) % 360;
+                    position.altitude = Math.asin(Math.sin(lat * Math.PI / 180) * Math.sin(venusDec * Math.PI / 180) + 
+                        Math.cos(lat * Math.PI / 180) * Math.cos(venusDec * Math.PI / 180) * Math.cos(venusHA * Math.PI / 180)) * 180 / Math.PI;
+                    
+                    position.magnitude = -4.40 + 5 * Math.log10(venusDistance * Math.sqrt(venusDistance * venusDistance + 1 - 2 * venusDistance * Math.cos((venusL - 180) * Math.PI / 180)));
+                    position.distance = venusDistance;
+                    position.velocity = 35.0;
+                    break;
+                    
+                case 'mars':
+                    const marsL = (355.433 + 0.5240207766 * daysSinceEpoch) % 360;
+                    const marsEcc = 0.0934;
+                    const marsInc = 1.85;
+                    
+                    const marsEccentricAnomaly = marsL + marsEcc * Math.sin(marsL * Math.PI / 180) * 180 / Math.PI;
+                    const marsDistance = 1.524 * (1 - marsEcc * Math.cos(marsEccentricAnomaly * Math.PI / 180));
+                    
+                    const marsRA = (marsEccentricAnomaly + 90) % 360;
+                    const marsDec = Math.sin(marsInc * Math.PI / 180) * Math.sin(marsEccentricAnomaly * Math.PI / 180) * 25;
+                    
+                    const marsHA = (marsRA - (date.getHours() + date.getMinutes()/60) * 15 + lon) % 360;
+                    position.azimuth = (Math.atan2(Math.sin(marsHA * Math.PI / 180), 
+                        Math.cos(marsHA * Math.PI / 180) * Math.sin(lat * Math.PI / 180) - 
+                        Math.tan(marsDec * Math.PI / 180) * Math.cos(lat * Math.PI / 180)) * 180 / Math.PI + 360) % 360;
+                    position.altitude = Math.asin(Math.sin(lat * Math.PI / 180) * Math.sin(marsDec * Math.PI / 180) + 
+                        Math.cos(lat * Math.PI / 180) * Math.cos(marsDec * Math.PI / 180) * Math.cos(marsHA * Math.PI / 180)) * 180 / Math.PI;
+                    
+                    position.magnitude = -1.52 + 5 * Math.log10(marsDistance * Math.sqrt(marsDistance * marsDistance + 1 - 2 * marsDistance * Math.cos((marsL - 180) * Math.PI / 180)));
+                    position.distance = marsDistance;
+                    position.velocity = 24.1;
+                    break;
+                    
+                case 'jupiter':
+                    const jupiterL = (34.351 + 0.0830853001 * daysSinceEpoch) % 360;
+                    const jupiterDistance = 5.204;
+                    
+                    const jupiterRA = (jupiterL + 90) % 360;
+                    const jupiterDec = Math.sin(1.31 * Math.PI / 180) * Math.sin(jupiterL * Math.PI / 180) * 23;
+                    
+                    const jupiterHA = (jupiterRA - (date.getHours() + date.getMinutes()/60) * 15 + lon) % 360;
+                    position.azimuth = (Math.atan2(Math.sin(jupiterHA * Math.PI / 180), 
+                        Math.cos(jupiterHA * Math.PI / 180) * Math.sin(lat * Math.PI / 180) - 
+                        Math.tan(jupiterDec * Math.PI / 180) * Math.cos(lat * Math.PI / 180)) * 180 / Math.PI + 360) % 360;
+                    position.altitude = Math.asin(Math.sin(lat * Math.PI / 180) * Math.sin(jupiterDec * Math.PI / 180) + 
+                        Math.cos(lat * Math.PI / 180) * Math.cos(jupiterDec * Math.PI / 180) * Math.cos(jupiterHA * Math.PI / 180)) * 180 / Math.PI;
+                    
+                    position.magnitude = -9.4 + 5 * Math.log10(jupiterDistance * Math.sqrt(jupiterDistance * jupiterDistance + 1 - 2 * jupiterDistance * Math.cos((jupiterL - 180) * Math.PI / 180)));
+                    position.distance = jupiterDistance;
+                    position.velocity = 13.1;
+                    break;
+                    
+                case 'saturn':
+                    const saturnL = (50.077 + 0.0334442282 * daysSinceEpoch) % 360;
+                    const saturnDistance = 9.537;
+                    
+                    const saturnRA = (saturnL + 90) % 360;
+                    const saturnDec = Math.sin(2.49 * Math.PI / 180) * Math.sin(saturnL * Math.PI / 180) * 23;
+                    
+                    const saturnHA = (saturnRA - (date.getHours() + date.getMinutes()/60) * 15 + lon) % 360;
+                    position.azimuth = (Math.atan2(Math.sin(saturnHA * Math.PI / 180), 
+                        Math.cos(saturnHA * Math.PI / 180) * Math.sin(lat * Math.PI / 180) - 
+                        Math.tan(saturnDec * Math.PI / 180) * Math.cos(lat * Math.PI / 180)) * 180 / Math.PI + 360) % 360;
+                    position.altitude = Math.asin(Math.sin(lat * Math.PI / 180) * Math.sin(saturnDec * Math.PI / 180) + 
+                        Math.cos(lat * Math.PI / 180) * Math.cos(saturnDec * Math.PI / 180) * Math.cos(saturnHA * Math.PI / 180)) * 180 / Math.PI;
+                    
+                    position.magnitude = -8.88 + 5 * Math.log10(saturnDistance * Math.sqrt(saturnDistance * saturnDistance + 1 - 2 * saturnDistance * Math.cos((saturnL - 180) * Math.PI / 180)));
+                    position.distance = saturnDistance;
+                    position.velocity = 9.7;
+                    break;
+                    
+                case 'uranus':
+                    const uranusL = (314.055 + 0.0116771814 * daysSinceEpoch) % 360;
+                    const uranusDistance = 19.191;
+                    
+                    const uranusRA = (uranusL + 90) % 360;
+                    const uranusDec = Math.sin(0.77 * Math.PI / 180) * Math.sin(uranusL * Math.PI / 180) * 23;
+                    
+                    const uranusHA = (uranusRA - (date.getHours() + date.getMinutes()/60) * 15 + lon) % 360;
+                    position.azimuth = (Math.atan2(Math.sin(uranusHA * Math.PI / 180), 
+                        Math.cos(uranusHA * Math.PI / 180) * Math.sin(lat * Math.PI / 180) - 
+                        Math.tan(uranusDec * Math.PI / 180) * Math.cos(lat * Math.PI / 180)) * 180 / Math.PI + 360) % 360;
+                    position.altitude = Math.asin(Math.sin(lat * Math.PI / 180) * Math.sin(uranusDec * Math.PI / 180) + 
+                        Math.cos(lat * Math.PI / 180) * Math.cos(uranusDec * Math.PI / 180) * Math.cos(uranusHA * Math.PI / 180)) * 180 / Math.PI;
+                    
+                    position.magnitude = -7.19 + 5 * Math.log10(uranusDistance * Math.sqrt(uranusDistance * uranusDistance + 1 - 2 * uranusDistance * Math.cos((uranusL - 180) * Math.PI / 180)));
+                    position.distance = uranusDistance;
+                    position.velocity = 6.8;
+                    break;
+                    
+                case 'neptune':
+                    const neptuneL = (304.348 + 0.0060190130 * daysSinceEpoch) % 360;
+                    const neptuneDistance = 30.069;
+                    
+                    const neptuneRA = (neptuneL + 90) % 360;
+                    const neptuneDec = Math.sin(1.77 * Math.PI / 180) * Math.sin(neptuneL * Math.PI / 180) * 23;
+                    
+                    const neptuneHA = (neptuneRA - (date.getHours() + date.getMinutes()/60) * 15 + lon) % 360;
+                    position.azimuth = (Math.atan2(Math.sin(neptuneHA * Math.PI / 180), 
+                        Math.cos(neptuneHA * Math.PI / 180) * Math.sin(lat * Math.PI / 180) - 
+                        Math.tan(neptuneDec * Math.PI / 180) * Math.cos(lat * Math.PI / 180)) * 180 / Math.PI + 360) % 360;
+                    position.altitude = Math.asin(Math.sin(lat * Math.PI / 180) * Math.sin(neptuneDec * Math.PI / 180) + 
+                        Math.cos(lat * Math.PI / 180) * Math.cos(neptuneDec * Math.PI / 180) * Math.cos(neptuneHA * Math.PI / 180)) * 180 / Math.PI;
+                    
+                    position.magnitude = -6.87 + 5 * Math.log10(neptuneDistance * Math.sqrt(neptuneDistance * neptuneDistance + 1 - 2 * neptuneDistance * Math.cos((neptuneL - 180) * Math.PI / 180)));
+                    position.distance = neptuneDistance;
+                    position.velocity = 5.4;
+                    break;
+                    
+                case 'europa-clipper':
+                    // **ECHTE NASA-DATEN**
+                    const clipperPos = interpolateCoordinate(clipperCoordinates, date);
+                    const earthPos = interpolateCoordinate(earthCoordinates, date);
+
+                    if (!clipperPos || !earthPos) {
+                        position.azimuth = 0;
+                        position.altitude = -90; // Versteckt, bis Daten da sind
+                        position.distance = 0;
+                        position.magnitude = 0;
+                        position.velocity = 0;
+                        break;
+                    }
+
+                    const dx = clipperPos.x - earthPos.x;
+                    const dy = clipperPos.y - earthPos.y;
+                    const dz = clipperPos.z - earthPos.z;
+
+                    const distanceAU = Math.sqrt(dx*dx + dy*dy + dz*dz);
+
+                    const eclipticLon = Math.atan2(dy, dx);
+                    const eclipticLat = Math.asin(dz / distanceAU);
+                    const obl = 23.43929 * Math.PI / 180;
+
+                    const sinDec = Math.sin(eclipticLat) * Math.cos(obl) + Math.cos(eclipticLat) * Math.sin(obl) * Math.sin(eclipticLon);
+                    const dec = Math.asin(sinDec);
+                    const decDeg = dec * 180 / Math.PI;
+
+                    const yRA = Math.sin(eclipticLon) * Math.cos(obl) - Math.tan(eclipticLat) * Math.sin(obl);
+                    const xRA = Math.cos(eclipticLon);
+                    const ra = (Math.atan2(yRA, xRA) * 180 / Math.PI + 360) % 360;
+
+                    const jd = (date.getTime() / 86400000) + 2440587.5;
+                    const T = (jd - 2451545.0) / 36525;
+                    const gmst0 = 280.46061837 + 360.98564736629 * (jd - 2451545.0) + 0.000387933 * T * T - T * T * T / 38710000;
+                    const lst = (gmst0 + lon) % 360;
+
+                    const ha = (lst - ra + 360) % 360;
+
+                    const latRad = lat * Math.PI / 180;
+                    const decRad = dec;
+                    const haRad = ha * Math.PI / 180;
+
+                    const altRad = Math.asin(Math.sin(latRad) * Math.sin(decRad) + Math.cos(latRad) * Math.cos(decRad) * Math.cos(haRad));
+                    const azRad = Math.atan2(-Math.sin(haRad) * Math.cos(decRad), Math.cos(latRad) * Math.sin(decRad) - Math.sin(latRad) * Math.cos(decRad) * Math.cos(haRad));
+
+                    position.azimuth = (azRad * 180 / Math.PI + 360) % 360;
+                    position.altitude = altRad * 180 / Math.PI;
+                    position.distance = distanceAU * 149597870.7; // In km statt AU für UI
+                    position.magnitude = 15; // Sehr dunkel
+                    position.velocity = 0; 
+                    break;
+            }
+            
+            return position;
+        }
+
+        // ===== HIMMELSKÖRPER-AUSWAHL =====
+        function selectCelestialBody(body) {
+            currentCelestialBody = body;
+            
+            // Alle Buttons deaktivieren
+            document.querySelectorAll('.selector-button').forEach(btn => btn.classList.remove('active'));
+            
+            // Aktiven Button markieren
+            const activeBtn = document.getElementById(`${body}-btn`);
+            if (activeBtn) activeBtn.classList.add('active');
+            
+            updateInfoPanelForCelestialBody();
+            
+            const calibrateBtn = document.getElementById('calibrate-btn');
+            const body_data = celestialBodies[body];
+            
+            if (body_data) {
+                calibrateBtn.innerHTML = `${body_data.symbol}<br>kal.`;
+                calibrateBtn.title = `Auf ${body_data.name} kalibrieren`;
+            }
+            
+            if (viewConfig.showPathInFOV) {
+                drawCelestialPathInFOV();
+            }
+        }
+
+        function updateInfoPanelForCelestialBody() {
+            const title = document.getElementById('info-title');
+            const riseLabel = document.getElementById('rise-label');
+            const setLabel = document.getElementById('set-label');
+            const phaseRow = document.getElementById('phase-row');
+            const magnitudeRow = document.getElementById('magnitude-row');
+            const distanceRow = document.getElementById('distance-row');
+            const velocityRow = document.getElementById('velocity-row');
+            const riseSetRow = document.getElementById('rise-set-row');
+            const setRow = document.getElementById('set-row');
+            
+            const body = celestialBodies[currentCelestialBody];
+            if (body) {
+                let dName = body.name;
+                if (dName === 'Europa Clipper') dName = 'Clipper';
+                title.textContent = `${body.symbol} ${dName} Info`;
+                riseLabel.textContent = `${dName} Aufg.:`;
+                setLabel.textContent = `${dName} Untg.:`;
+            }
+
+            phaseRow.style.display = currentCelestialBody === 'moon' ? 'flex' : 'none';
+            magnitudeRow.style.display = !['sun', 'moon'].includes(currentCelestialBody) ? 'flex' : 'none';
+            distanceRow.style.display = !['sun', 'moon'].includes(currentCelestialBody) ? 'flex' : 'none';
+            velocityRow.style.display = currentCelestialBody === 'europa-clipper' ? 'flex' : 'none';
+            riseSetRow.style.display = 'flex';
+            setRow.style.display = 'flex';
+        }
+
+        function getCurrentCelestialPosition() {
+            return getPositionForBody(currentCelestialBody) || sunPosition;
+        }
+
+        // ===== INITIALISIERUNG =====
+        window.addEventListener('load', () => {
+            const overlay = document.createElement('div');
+            overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);z-index:9999;display:flex;flex-direction:column;justify-content:center;align-items:center;color:white;text-align:center;font-family:sans-serif;padding:20px;';
+            overlay.innerHTML = '<h1 style="margin-bottom:20px;">AR Himmelsnavigator</h1><p style="margin-bottom:30px;opacity:0.8;font-size:16px;">Halte das Smartphone senkrecht vor dich.</p><button id="start-ar-btn" style="padding:15px 30px;font-size:20px;background:#0a84ff;color:white;border:none;border-radius:12px;box-shadow:0 4px 10px rgba(0,0,0,0.5);cursor:pointer;font-weight:bold;">🚀 AR Starten</button><p style="margin-top:20px;opacity:0.6;font-size:12px;">Erfordert Kamera- & Sensorzugriff</p>';
+            document.body.appendChild(overlay);
+
+            document.getElementById('start-ar-btn').addEventListener('click', async () => {
+                overlay.remove();
+                await requestSensorPermissions();
+            initializeLocation();
+            setupEventListeners();
+            setupPanels();
+            startSensorUpdates();
+            startRealtimeUpdates();
+            resizeCanvas();
+            resizeStarsCanvas();
+            detectOrientation();
+            updateCameraStatus();
+            updateInfoPanelForCelestialBody();
+        });
+
+        window.addEventListener('resize', () => {
+            resizeCanvas();
+            resizeStarsCanvas();
+            detectOrientation();
+            });
+        });
+
+        window.addEventListener('orientationchange', () => {
+            setTimeout(() => {
+                detectOrientation();
+                resizeCanvas();
+                resizeStarsCanvas();
+            }, 500);
+        });
+
+        // ===== 360°-SICHTFELD-FUNKTIONEN =====
+        function isInFieldOfView(targetAzimuth, targetAltitude) {
+            const azimuthDiff = Math.abs(getShortestAngle(deviceOrientation.azimuth, targetAzimuth));
+            const altitudeDiff = Math.abs(targetAltitude - deviceOrientation.pitch);
+            const fovHalf = viewConfig.fieldOfView / 2;
+            return azimuthDiff <= fovHalf && altitudeDiff <= fovHalf;
+        }
+
+        function getCelestialScreenPosition() {
+            const celestialPos = getCurrentCelestialPosition();
+            const azimuthDiff = getShortestAngle(deviceOrientation.azimuth, celestialPos.azimuth);
+            const altitudeDiff = celestialPos.altitude - deviceOrientation.pitch;
+            
+            const fovHalf = viewConfig.fieldOfView / 2;
+            const x = (azimuthDiff / fovHalf) * (window.innerWidth / 2) + window.innerWidth / 2;
+            const y = (-altitudeDiff / fovHalf) * (window.innerHeight / 2) + window.innerHeight / 2;
+            
+            return { x, y, inView: isInFieldOfView(celestialPos.azimuth, celestialPos.altitude) };
+        }
+
+        // ===== MINIMIZE-FUNKTIONEN =====
+        function toggleMinimize(elementId) {
+            const element = document.getElementById(elementId);
+            const minimizeBtn = element.querySelector('.minimize-btn');
+
+            element.classList.toggle('minimized');
+
+            if (element.classList.contains('minimized')) {
+                minimizeBtn.textContent = '▼';
+            } else {
+                minimizeBtn.textContent = '▲';
+            }
+        }
+        function startRealtimeUpdates() {
+            updateRealtimeCelestialPositions();
+            
+            if (realtimeUpdateInterval) {
+                clearInterval(realtimeUpdateInterval);
+            }
+            
+            realtimeUpdateInterval = setInterval(() => {
+                updateRealtimeCelestialPositions();
+                updateRealtimeInfo();
+            }, updateIntervalMs);
+        }
+
+        async function updateRealtimeCelestialPositions() {
+            if (!userLocation.lat || !userLocation.lon) return;
+            
+            const now = new Date();
+            
+            // **NUR LOKALE BERECHNUNGEN (NASA API deaktiviert aufgrund CORS-Problemen)**
+            const sunPos = SunCalc.getPosition(now, userLocation.lat, userLocation.lon);
+            const sunTimes = SunCalc.getTimes(now, userLocation.lat, userLocation.lon);
+            
+            sunPosition.azimuth = ((sunPos.azimuth * 180 / Math.PI) + 180) % 360;
+            sunPosition.altitude = sunPos.altitude * 180 / Math.PI;
+            
+            const moonPos = SunCalc.getMoonPosition(now, userLocation.lat, userLocation.lon);
+            const moonTimes = SunCalc.getMoonTimes(now, userLocation.lat, userLocation.lon);
+            const moonIllumination = SunCalc.getMoonIllumination(now);
+            
+            moonPosition.azimuth = ((moonPos.azimuth * 180 / Math.PI) + 180) % 360;
+            moonPosition.altitude = moonPos.altitude * 180 / Math.PI;
+            
+            // **ALLE PLANETEN BERECHNEN**
+            for (const body of ['mercury', 'venus', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune', 'europa-clipper']) {
+                const local = calculatePlanetPositionAdvanced(body, now, userLocation.lat, userLocation.lon);
+                switch(body) {
+                    case 'mercury': mercuryPosition = local; break;
+                    case 'venus': venusPosition = local; break;
+                    case 'mars': marsPosition = local; break;
+                    case 'jupiter': jupiterPosition = local; break;
+                    case 'saturn': saturnPosition = local; break;
+                    case 'uranus': uranusPosition = local; break;
+                    case 'neptune': neptunePosition = local; break;
+                    case 'europa-clipper': europaClipperPosition = local; break;
+                }
+            }
+            
+            updateCelestialInViewport();
+            updateStarsDisplay();
+            updateRealtimeInfo(now, sunTimes, moonTimes, moonIllumination);
+            
+            if (viewConfig.showPathInFOV) {
+                drawCelestialPathInFOV();
+            }
+        }
+
+        // ===== ALLE HIMMELSKÖRPER GLEICHZEITIG ANZEIGEN MIT KLEINEREN GRÖSSEN =====
+        function updateCelestialInViewport() {
+            const canvas = document.getElementById('ar-overlay');
+            const ctx = canvas.getContext('2d');
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            if (celestialConfig.showAllCelestial) {
+                // **ALLE HIMMELSKÖRPER ANZEIGEN**
+                Object.keys(celestialBodies).forEach(bodyKey => {
+                    const bodyPos = getPositionForBody(bodyKey);
+                    const body = celestialBodies[bodyKey];
+                    
+                    if (bodyPos && isInFieldOfView(bodyPos.azimuth, bodyPos.altitude)) {
+                        const azimuthDiff = getShortestAngle(deviceOrientation.azimuth, bodyPos.azimuth);
+                        const altitudeDiff = bodyPos.altitude - deviceOrientation.pitch;
+                        
+                        const fovHalf = viewConfig.fieldOfView / 2;
+                        const x = (azimuthDiff / fovHalf) * (window.innerWidth / 2) + window.innerWidth / 2;
+                        const y = (-altitudeDiff / fovHalf) * (window.innerHeight / 2) + window.innerHeight / 2;
+                        
+                        if (x >= 0 && x <= window.innerWidth && y >= 0 && y <= window.innerHeight) {
+                            const isVisible = bodyPos.altitude > -5;
+                            const baseSize = getBodySize(bodyKey, isVisible) * celestialConfig.size;
+
+                            // **HERVORHEBUNG FÜR AUSGEWÄHLTEN HIMMELSKÖRPER**
+                            const isSelected = bodyKey === currentCelestialBody;
+                            const size = isSelected ? baseSize * 1.65 : baseSize;
+                            const alpha = isSelected ? (isVisible ? 1.0 : 0.75) : (isVisible ? 0.72 : 0.42);
+
+                            ctx.save();
+                            ctx.shadowColor = body.shadowColor;
+                            ctx.shadowBlur = isVisible ? (isSelected ? 38 : 20) : (isSelected ? 24 : 10);
+
+                            ctx.beginPath();
+                            ctx.arc(x, y, size, 0, 2 * Math.PI);
+                            ctx.fillStyle = body.color;
+                            ctx.globalAlpha = alpha;
+                            ctx.fill();
+
+                            ctx.globalAlpha = 1;
+                            ctx.fillStyle = isVisible ? '#fff' : '#ccc';
+                            ctx.font = `bold ${size * 0.85}px Arial`;
+                            ctx.textAlign = 'center';
+                            ctx.fillText(body.symbol, x, y + (size * 0.28));
+
+                            if (isSelected) {
+                                ctx.strokeStyle = '#ffffff';
+                                ctx.lineWidth = 3;
+                                ctx.beginPath();
+                                ctx.arc(x, y, size + 10, 0, 2 * Math.PI);
+                                ctx.stroke();
+
+                                ctx.strokeStyle = body.shadowColor;
+                                ctx.lineWidth = 4;
+                                ctx.globalAlpha = 0.9;
+                                ctx.beginPath();
+                                ctx.arc(x, y, size + 18, 0, 2 * Math.PI);
+                                ctx.stroke();
+                            }
+
+                            ctx.restore();
+                        }
+                    }
+                });
+            } else {
+                // **NUR AUSGEWÄHLTEN HIMMELSKÖRPER ANZEIGEN**
+                const celestialScreenPos = getCelestialScreenPosition();
+                
+                if (viewConfig.showCelestialInFOV && celestialScreenPos.inView) {
+                    const celestialPos = getCurrentCelestialPosition();
+                    const body = celestialBodies[currentCelestialBody];
+                    const isVisible = celestialPos.altitude > -5;
+                    
+                    const size = getBodySize(currentCelestialBody, isVisible) * celestialConfig.size;
+                    
+                    ctx.save();
+                    ctx.shadowColor = body.shadowColor;
+                    ctx.shadowBlur = isVisible ? 25 : 15;
+                    
+                    ctx.beginPath();
+                    ctx.arc(celestialScreenPos.x, celestialScreenPos.y, size, 0, 2 * Math.PI);
+                    ctx.fillStyle = body.color.replace(')', ', 0.9)').replace('rgb', 'rgba');
+                    ctx.fill();
+                    
+                    ctx.fillStyle = isVisible ? '#fff' : '#ccc';
+                    ctx.font = `bold ${size * 0.8}px Arial`;
+                    ctx.textAlign = 'center';
+                    ctx.fillText(body.symbol, celestialScreenPos.x, celestialScreenPos.y + (size * 0.3));
+                    
+                    if (isVisible) {
+                        ctx.strokeStyle = body.color.replace(')', ', 0.3)').replace('rgb', 'rgba');
+                        ctx.lineWidth = 2;
+                        for (let i = 1; i <= 3; i++) {
+                            ctx.beginPath();
+                            ctx.arc(celestialScreenPos.x, celestialScreenPos.y, size + (i * 10), 0, 2 * Math.PI);
+                            ctx.stroke();
+                        }
+                    }
+                    
+                    ctx.restore();
+                }
+            }
+        }
+
+        function updateRealtimeInfo(now = new Date(), sunTimes = null, moonTimes = null, moonIllumination = null) {
+            if (!sunTimes && userLocation.lat && userLocation.lon) {
+                sunTimes = SunCalc.getTimes(now, userLocation.lat, userLocation.lon);
+                moonTimes = SunCalc.getMoonTimes(now, userLocation.lat, userLocation.lon);
+                moonIllumination = SunCalc.getMoonIllumination(now);
+            }
+            
+            const celestialPos = getCurrentCelestialPosition();
+            
+            document.getElementById('current-time').textContent = now.toLocaleTimeString('de-DE');
+            document.getElementById('celestial-azimuth').textContent = celestialPos.azimuth.toFixed(1) + '°';
+            document.getElementById('celestial-elevation').textContent = celestialPos.altitude.toFixed(1) + '°';
+            
+            if (currentCelestialBody === 'sun' && sunTimes) {
+                document.getElementById('rise-time').textContent = sunTimes.sunrise ? 
+                    sunTimes.sunrise.toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}) : '--:--';
+                document.getElementById('set-time').textContent = sunTimes.sunset ? 
+                    sunTimes.sunset.toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}) : '--:--';
+            } else if (currentCelestialBody === 'moon' && moonTimes) {
+                document.getElementById('rise-time').textContent = moonTimes.rise ? 
+                    moonTimes.rise.toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}) : '--:--';
+                document.getElementById('set-time').textContent = moonTimes.set ? 
+                    moonTimes.set.toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}) : '--:--';
+                
+                if (moonIllumination) {
+                    const phase = moonIllumination.phase;
+                    let phaseName = '';
+                    if (phase < 0.1) phaseName = '🌑 Neumond';
+                    else if (phase < 0.25) phaseName = '🌒 Zunehmend';
+                    else if (phase < 0.35) phaseName = '🌓 Erstes Viertel';
+                    else if (phase < 0.65) phaseName = '🌔 Zunehmend';
+                    else if (phase < 0.75) phaseName = '🌕 Vollmond';
+                    else if (phase < 0.9) phaseName = '🌖 Abnehmend';
+                    else phaseName = '🌗 Letztes Viertel';
+                    
+                    document.getElementById('moon-phase').textContent = phaseName;
+                }
 
             } else {
             document.getElementById('rise-time').textContent = (riseSet && riseSet.rise) ? formatRiseSetTime(riseSet.rise) : '--:--';
