@@ -1751,14 +1751,14 @@ setInterval(() => {
                 clearInterval(realtimeUpdateInterval);
             }
             
-            // NEU: Wenn der moderne Sensor NICHT unterstützt wird (z.B. Firefox, Safari),
-            // reduzieren wir die Hintergrund-Berechnungen drastisch auf alle 20 Sekunden,
-            // um die CPU zu entlasten und Ruckeln zu vermeiden.
+            // NEU: CPU-Entlastung für Firefox/Fennec & Safari
+            // Wenn der moderne Chrome-Sensor NICHT da ist, berechnen wir die 
+            // Planeten-Positionen nur alle 20 Sekunden neu, um CPU/Akku zu sparen.
             if (!('AbsoluteOrientationSensor' in window)) {
-                updateIntervalMs = 20000; // 20 Sekunden
-                console.log("Nicht-Chromium Browser erkannt: Reduziere Planeten-Updates auf 20s");
+                updateIntervalMs = 20000;
+                console.log("Legacy Browser erkannt: Planeten-Updates auf 20s gedrosselt.");
             } else {
-                updateIntervalMs = 1000; // 1 Sekunde für Chrome (wie bisher)
+                updateIntervalMs = 1000; // Chrome bleibt flüssig bei 1 Sekunde
             }
             
             realtimeUpdateInterval = setInterval(() => {
@@ -2210,22 +2210,24 @@ let orientationSensor = null;
         }
         
         function fallbackToLegacySensor() {
+            // Alte Listener sicherheitshalber aufräumen
             window.removeEventListener('deviceorientationabsolute', handleDeviceOrientationLegacy, true);
             window.removeEventListener('deviceorientation', handleDeviceOrientationLegacy, true);
         
-            if (
-                compassConfig.useWebkit &&
-                typeof DeviceOrientationEvent !== 'undefined' &&
-                typeof DeviceOrientationEvent.requestPermission === 'function'
-            ) {
+            // 1. iOS / WebKit
+            if (compassConfig.useWebkit && typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
                 window.addEventListener('deviceorientation', handleDeviceOrientationLegacy, true);
                 console.log("Legacy Sensor (iOS/WebKit) gestartet.");
-            } else if ('ondeviceorientationabsolute' in window && compassConfig.useAbsolute) {
+            } 
+            // 2. Firefox / Android: NUR wenn das Event auch wirklich vom Browser unterstützt wird!
+            else if ('ondeviceorientationabsolute' in window && compassConfig.useAbsolute) {
                 window.addEventListener('deviceorientationabsolute', handleDeviceOrientationLegacy, true);
                 console.log("Legacy Sensor (deviceorientationabsolute) gestartet.");
-            } else {
+            } 
+            // 3. Fallback für alles andere
+            else {
                 window.addEventListener('deviceorientation', handleDeviceOrientationLegacy, true);
-                console.log("Legacy Sensor (deviceorientation) gestartet.");
+                console.log("Legacy Sensor (normales deviceorientation) gestartet.");
             }
         }
 
