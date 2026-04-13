@@ -1751,6 +1751,16 @@ setInterval(() => {
                 clearInterval(realtimeUpdateInterval);
             }
             
+            // NEU: Wenn der moderne Sensor NICHT unterstützt wird (z.B. Firefox, Safari),
+            // reduzieren wir die Hintergrund-Berechnungen drastisch auf alle 20 Sekunden,
+            // um die CPU zu entlasten und Ruckeln zu vermeiden.
+            if (!('AbsoluteOrientationSensor' in window)) {
+                updateIntervalMs = 20000; // 20 Sekunden
+                console.log("Nicht-Chromium Browser erkannt: Reduziere Planeten-Updates auf 20s");
+            } else {
+                updateIntervalMs = 1000; // 1 Sekunde für Chrome (wie bisher)
+            }
+            
             realtimeUpdateInterval = setInterval(() => {
                 updateRealtimeCelestialPositions();
                 updateRealtimeInfo();
