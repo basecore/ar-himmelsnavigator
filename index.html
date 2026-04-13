@@ -2258,6 +2258,12 @@ let orientationSensor = null;
         let legacyLastStableHeading = null;
         let legacyLastStablePitch = 0;
         let legacyLastStableRoll = 0;
+
+        function resetSmoothingBuffers() {
+            smoothingBuffers.azimuth = [];
+            smoothingBuffers.pitch = [];
+            smoothingBuffers.roll = [];
+        }
         
         function handleDeviceOrientationLegacy(event) {
             if (event.alpha == null && event.beta == null && event.gamma == null) return;
