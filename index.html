@@ -2307,7 +2307,7 @@ let orientationSensor = null;
             smoothingBuffers.pitch.push(rawPitch);
             smoothingBuffers.roll.push(rawRoll);
 
-            const adaptiveSmoothingFactor = getAdaptiveSmoothingFactor(rawPitch);
+            const adaptiveSmoothingFactor = getAdaptiveSmoothingFactor(rawPitch, isAdvanced);
 
             for (let axis in smoothingBuffers) {
                 if (smoothingBuffers[axis].length > adaptiveSmoothingFactor) {
@@ -2780,7 +2780,7 @@ let orientationSensor = null;
                 <div class="debug-value">Current Body: ${currentCelestialBody.toUpperCase()}</div>
                 <div class="debug-value">Gimbal Lock Zone: ${values.gimbalLockActive ? 'ACTIVE' : 'NORMAL'}</div>
                 <div class="debug-value">Pitch: ${deviceOrientation.pitch.toFixed(1)}°</div>
-                <div class="debug-value">Smoothing Factor: ${getAdaptiveSmoothingFactor(deviceOrientation.pitch)}</div>
+                <div class="debug-value">Smoothing Factor: ${getAdaptiveSmoothingFactor(deviceOrientation.pitch, orientationSensor !== null)}</div>
                 <div class="debug-value">Visible Bodies: ${visibleBodies}/10</div>
                 <div class="debug-value">Stars Visible: ${visibleStars}/100</div>
                 <div class="debug-value">FOV: ${viewConfig.fieldOfView}°</div>
