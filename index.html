@@ -2203,20 +2203,19 @@ let orientationSensor = null;
             window.removeEventListener('deviceorientationabsolute', handleDeviceOrientationLegacy, true);
             window.removeEventListener('deviceorientation', handleDeviceOrientationLegacy, true);
         
-            // iOS/Webkit-Erkennung (bleibt unangetastet)
-            if (compassConfig.useWebkit && typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+            if (
+                compassConfig.useWebkit &&
+                typeof DeviceOrientationEvent !== 'undefined' &&
+                typeof DeviceOrientationEvent.requestPermission === 'function'
+            ) {
                 window.addEventListener('deviceorientation', handleDeviceOrientationLegacy, true);
-                console.log("Legacy Sensor (iOS Webkit) gestartet.");
-            } 
-            // NEU: Firefox Android bevorzugt ondeviceorientationabsolute!
-            else if ('ondeviceorientationabsolute' in window) {
+                console.log("Legacy Sensor (iOS/WebKit) gestartet.");
+            } else if ('ondeviceorientationabsolute' in window && compassConfig.useAbsolute) {
                 window.addEventListener('deviceorientationabsolute', handleDeviceOrientationLegacy, true);
-                console.log("Legacy Sensor (deviceorientationabsolute - z.B. Firefox) gestartet.");
-            } 
-            // Fallback für alle anderen alten Browser
-            else {
+                console.log("Legacy Sensor (deviceorientationabsolute) gestartet.");
+            } else {
                 window.addEventListener('deviceorientation', handleDeviceOrientationLegacy, true);
-                console.log("Legacy Sensor (normales deviceorientation) gestartet.");
+                console.log("Legacy Sensor (deviceorientation) gestartet.");
             }
         }
 
@@ -2314,7 +2313,7 @@ let orientationSensor = null;
                 currentHeading = (360 - currentHeading) % 360;
             }
             if (compassConfig.reverseCompass) {
-                currentHeading = (currentHeading + 180) % 360;
+                currentHeading = (360 - currentHeading) % 360;
             }
 
             currentHeading = (currentHeading + compassConfig.manualOffset + 360) % 360;
