@@ -2172,8 +2172,11 @@ let orientationSensor = null;
                 orientationSensor.stop();
                 orientationSensor = null;
             }
+        
             window.removeEventListener('deviceorientationabsolute', handleDeviceOrientationLegacy, true);
             window.removeEventListener('deviceorientation', handleDeviceOrientationLegacy, true);
+        
+            resetSmoothingBuffers();
         
             if (compassConfig.useAdvancedSensor && 'AbsoluteOrientationSensor' in window) {
                 try {
@@ -2182,7 +2185,6 @@ let orientationSensor = null;
                     orientationSensor.addEventListener('error', (event) => {
                         console.warn("Sensor error:", event.error);
                         if (event.error.name === 'NotAllowedError' || event.error.name === 'NotReadableError') {
-                            showBrowserWarning(); // Warnung bei Sensor-Fehler
                             fallbackToLegacySensor();
                         }
                     });
@@ -2191,12 +2193,9 @@ let orientationSensor = null;
                     return;
                 } catch (error) {
                     console.warn("Konnte AbsoluteOrientationSensor nicht starten:", error);
-                    showBrowserWarning(); // Warnung bei Absturz des Sensors
                 }
             }
-            
-            // Warnung, wenn der Sensor im Browser gar nicht existiert (z. B. Firefox, Fennec, Safari)
-            showBrowserWarning();
+        
             fallbackToLegacySensor();
         }
         
@@ -2245,14 +2244,35 @@ let orientationSensor = null;
         let legacyUpdateScheduled = false;
         
         function handleDeviceOrientationLegacy(event) {
-            // Werte nur zwischenspeichern
-            pendingLegacyEvent = event;
-            
-            // Nur einmal pro Frame updaten, verhindert Firefox-Trägheit
-            if (!legacyUpdateScheduled) {
-                legacyUpdateScheduled = true;
-                requestAnimationFrame(processLegacySensorData);
+            if (event.alpha == null && event.beta == null && event.gamma == null) return;
+        
+            let rawAlpha = event.alpha || 0;
+            let beta = event.beta || 0;
+            let gamma = event.gamma || 0;
+        
+            let rawAzimuth = 0;
+        
+            if (event.webkitCompassHeading !== undefined && compassConfig.useWebkit) {
+                rawAzimuth = event.webkitCompassHeading;
+            } else if (event.absolute === true && compassConfig.useAbsolute) {
+                rawAzimuth = (360 - rawAlpha) % 360;
+            } else {
+                rawAzimuth = rawAlpha;
             }
+        
+            let correctedPitch = beta - 90;
+        
+            if (Math.abs(correctedPitch) < 1.5) {
+                correctedPitch = 0;
+            }
+        
+            applySensorValues(rawAzimuth, correctedPitch, gamma, false, event);
+        }
+
+        function resetSmoothingBuffers() {
+            smoothingBuffers.azimuth = [];
+            smoothingBuffers.pitch = [];
+            smoothingBuffers.roll = [];
         }
         
         // Neue Funktion, die das eigentliche Zeichnen übernimmt
