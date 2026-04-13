@@ -2130,6 +2130,31 @@ setInterval(() => {
         // ===== SENSOR-UPDATES MIT GIMBAL LOCK PROTECTION =====
 let orientationSensor = null;
 
+        let warningShown = false; // Verhindert mehrfaches Anzeigen der Warnung
+        
+        function showBrowserWarning() {
+            if (warningShown) return;
+            warningShown = true;
+            
+            const warning = document.createElement('div');
+            warning.style.cssText = `
+                position: fixed; top: 10px; left: 10px; right: 10px; 
+                background: rgba(255, 60, 60, 0.9); color: white; 
+                padding: 12px; border-radius: 8px; z-index: 10000; 
+                text-align: center; font-family: sans-serif; font-size: 14px; box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            `;
+            warning.innerHTML = `
+                <strong>Hinweis:</strong> Dein Browser unterstützt nicht die präzisen AR-Sensoren. <br>
+                Das Erlebnis könnte leicht ruckeln. Für die beste Erfahrung nutze bitte einen <strong>Chrome-basierten Browser</strong>.
+                <br><button id="close-warning" style="margin-top: 10px; padding: 6px 12px; background: white; color: red; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Verstanden</button>
+            `;
+            document.body.appendChild(warning);
+        
+            document.getElementById('close-warning').addEventListener('click', () => {
+                warning.remove();
+            });
+        }
+        
         function startSensorUpdates() {
             if (orientationSensor) {
                 orientationSensor.stop();
@@ -2137,7 +2162,7 @@ let orientationSensor = null;
             }
             window.removeEventListener('deviceorientationabsolute', handleDeviceOrientationLegacy, true);
             window.removeEventListener('deviceorientation', handleDeviceOrientationLegacy, true);
-
+        
             if (compassConfig.useAdvancedSensor && 'AbsoluteOrientationSensor' in window) {
                 try {
                     orientationSensor = new AbsoluteOrientationSensor({ frequency: 60, referenceFrame: 'device' });
@@ -2145,6 +2170,7 @@ let orientationSensor = null;
                     orientationSensor.addEventListener('error', (event) => {
                         console.warn("Sensor error:", event.error);
                         if (event.error.name === 'NotAllowedError' || event.error.name === 'NotReadableError') {
+                            showBrowserWarning(); // Warnung bei Sensor-Fehler
                             fallbackToLegacySensor();
                         }
                     });
@@ -2153,11 +2179,14 @@ let orientationSensor = null;
                     return;
                 } catch (error) {
                     console.warn("Konnte AbsoluteOrientationSensor nicht starten:", error);
+                    showBrowserWarning(); // Warnung bei Absturz des Sensors
                 }
             }
+            
+            // Warnung, wenn der Sensor im Browser gar nicht existiert (z. B. Firefox, Fennec, Safari)
+            showBrowserWarning();
             fallbackToLegacySensor();
         }
-
         function fallbackToLegacySensor() {
             if (compassConfig.useWebkit && typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
                 window.addEventListener('deviceorientation', handleDeviceOrientationLegacy, true);
