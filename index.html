@@ -2210,24 +2210,19 @@ let orientationSensor = null;
         }
         
         function fallbackToLegacySensor() {
-            // Alte Listener sicherheitshalber aufräumen
             window.removeEventListener('deviceorientationabsolute', handleDeviceOrientationLegacy, true);
             window.removeEventListener('deviceorientation', handleDeviceOrientationLegacy, true);
         
-            // 1. iOS / WebKit
             if (compassConfig.useWebkit && typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
                 window.addEventListener('deviceorientation', handleDeviceOrientationLegacy, true);
                 console.log("Legacy Sensor (iOS/WebKit) gestartet.");
-            } 
-            // 2. Firefox / Android: NUR wenn das Event auch wirklich vom Browser unterstützt wird!
-            else if ('ondeviceorientationabsolute' in window && compassConfig.useAbsolute) {
+            } else if ('ondeviceorientationabsolute' in window && compassConfig.useAbsolute) {
+                // WICHTIG: Das hier macht vrsolar9-2.html besser! Es prüft, ob ondeviceorientationabsolute wirklich existiert.
                 window.addEventListener('deviceorientationabsolute', handleDeviceOrientationLegacy, true);
                 console.log("Legacy Sensor (deviceorientationabsolute) gestartet.");
-            } 
-            // 3. Fallback für alles andere
-            else {
+            } else {
                 window.addEventListener('deviceorientation', handleDeviceOrientationLegacy, true);
-                console.log("Legacy Sensor (normales deviceorientation) gestartet.");
+                console.log("Legacy Sensor (deviceorientation) gestartet.");
             }
         }
 
@@ -2254,30 +2249,67 @@ let orientationSensor = null;
         let pendingLegacyEvent = null;
         let legacyUpdateScheduled = false;
         
-        function handleDeviceOrientationLegacy(event) {
-            if (event.alpha == null && event.beta == null && event.gamma == null) return;
+        let legacyAlphaFiltered = null;
+        let legacyBetaFiltered = null;
+        let legacyGammaFiltered = null;
+        let legacyLastStableHeading = null;
+        let legacyLastStablePitch = 0;
+        let legacyLastStableRoll = 0;
         
-            let rawAlpha = event.alpha || 0;
-            let beta = event.beta || 0;
-            let gamma = event.gamma || 0;
+        function handleDeviceOrientationLegacy(event) {
+            let alpha = event.alpha;
+            let beta = event.beta;
+            let gamma = event.gamma;
+        
+            if (alpha === null || beta === null || gamma === null) return;
+        
+            // Glättung für Firefox
+            const filterFactor = 0.25;
+        
+            if (legacyAlphaFiltered === null) {
+                legacyAlphaFiltered = alpha;
+                legacyBetaFiltered = beta;
+                legacyGammaFiltered = gamma;
+            } else {
+                let alphaDiff = alpha - legacyAlphaFiltered;
+                if (alphaDiff > 180) alphaDiff -= 360;
+                if (alphaDiff < -180) alphaDiff += 360;
+        
+                legacyAlphaFiltered = (legacyAlphaFiltered + alphaDiff * filterFactor + 360) % 360;
+                legacyBetaFiltered = legacyBetaFiltered + (beta - legacyBetaFiltered) * filterFactor;
+                legacyGammaFiltered = legacyGammaFiltered + (gamma - legacyGammaFiltered) * filterFactor;
+            }
         
             let rawAzimuth = 0;
-        
             if (event.webkitCompassHeading !== undefined && compassConfig.useWebkit) {
                 rawAzimuth = event.webkitCompassHeading;
             } else if (event.absolute === true && compassConfig.useAbsolute) {
-                rawAzimuth = (360 - rawAlpha) % 360;
+                rawAzimuth = (360 - legacyAlphaFiltered) % 360;
             } else {
-                rawAzimuth = rawAlpha;
+                rawAzimuth = legacyAlphaFiltered;
             }
         
-            let correctedPitch = beta - 90;
+            let correctedPitch = legacyBetaFiltered - 90;
+            let correctedRoll = legacyGammaFiltered;
+        
+            // TISCH-SCHUTZ: Wenn das Handy flach liegt (Neigung fast 90°), frieren wir die Werte ein
+            const isNearlyFlat = Math.abs(correctedPitch) > 82;
+        
+            if (isNearlyFlat) {
+                if (legacyLastStableHeading !== null) rawAzimuth = legacyLastStableHeading;
+                correctedPitch = legacyLastStablePitch;
+                correctedRoll = legacyLastStableRoll;
+            } else {
+                legacyLastStableHeading = rawAzimuth;
+                legacyLastStablePitch = correctedPitch;
+                legacyLastStableRoll = correctedRoll;
+            }
         
             if (Math.abs(correctedPitch) < 1.5) {
                 correctedPitch = 0;
             }
         
-            applySensorValues(rawAzimuth, correctedPitch, gamma, false, event);
+            applySensorValues(rawAzimuth, correctedPitch, correctedRoll, false, event);
         }
 
         function resetSmoothingBuffers() {
