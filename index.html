@@ -1373,30 +1373,18 @@ setInterval(() => {
             return Math.min(1, Math.max(0, distanceFromCritical / transitionRange));
         }
 
-        // Wir fügen "isAdvanced" als zweites Argument hinzu
-        function getAdaptiveSmoothingFactor(pitch, isAdvanced = true) {
-            // 1. Hole den eingestellten Basis-Glättungswert der App
-            let baseFactor = compassConfig.smoothingFactor;
-            
-            // 2. WICHTIG: Wenn es der Legacy-Sensor (Firefox) ist, 
-            // reduzieren wir die Glättung extrem (auf ca. ein Drittel), um die Trägheit zu beenden.
-            if (!isAdvanced) {
-                baseFactor = Math.max(1, Math.floor(baseFactor / 3));
-            }
-        
-            // 3. Wenn Gimbal-Lock aus ist, direkt den (angepassten) Base-Factor zurückgeben
-            if (!gimbalLockConfig.enabled) return baseFactor;
-        
-            // 4. Gimbal-Lock-Multiplikatoren anwenden
+        function getAdaptiveSmoothingFactor(pitch) {
+            if (!gimbalLockConfig.enabled) return compassConfig.smoothingFactor;
+
             const absP = Math.abs(pitch);
             const horizontalDistance = 90 - absP;
-        
+
             if (horizontalDistance <= gimbalLockConfig.criticalZoneEnd) {
-                return baseFactor * 3;
+                return compassConfig.smoothingFactor * 3;
             } else if (horizontalDistance <= gimbalLockConfig.deadZoneEnd) {
-                return baseFactor * 2;
+                return compassConfig.smoothingFactor * 2;
             } else {
-                return baseFactor;
+                return compassConfig.smoothingFactor;
             }
         }
 
@@ -1751,16 +1739,6 @@ setInterval(() => {
                 clearInterval(realtimeUpdateInterval);
             }
             
-            // NEU: CPU-Entlastung für Firefox/Fennec & Safari
-            // Wenn der moderne Chrome-Sensor NICHT da ist, berechnen wir die 
-            // Planeten-Positionen nur alle 20 Sekunden neu, um CPU/Akku zu sparen.
-            if (!('AbsoluteOrientationSensor' in window)) {
-                updateIntervalMs = 20000;
-                console.log("Legacy Browser erkannt: Planeten-Updates auf 20s gedrosselt.");
-            } else {
-                updateIntervalMs = 1000; // Chrome bleibt flüssig bei 1 Sekunde
-            }
-            
             realtimeUpdateInterval = setInterval(() => {
                 updateRealtimeCelestialPositions();
                 updateRealtimeInfo();
@@ -1953,18 +1931,17 @@ setInterval(() => {
                     document.getElementById('moon-phase').textContent = phaseName;
                 }
 
-            } else if (currentCelestialBody === 'europa-clipper' && userLocation) {
-                const rs = calculateClipperRiseSetCached(
-                    now,
-                    userLocation.lat,
-                    userLocation.lon
-                );
+            } else if (currentCelestialBody === 'europa-clipper' && userLocation.lat && userLocation.lon) {
+                const rs = calculateClipperRiseSetCached(now, userLocation.lat, userLocation.lon);
                 document.getElementById('rise-time').textContent = formatRiseSetTime(rs.rise);
                 document.getElementById('set-time').textContent = formatRiseSetTime(rs.set);
-            } else {
+            } else if (userLocation.lat && userLocation.lon) {
                 const riseSet = calculateRiseSet(currentCelestialBody, now, userLocation.lat, userLocation.lon);
                 document.getElementById('rise-time').textContent = formatRiseSetTime(riseSet.rise);
                 document.getElementById('set-time').textContent = formatRiseSetTime(riseSet.set);
+            } else {
+                document.getElementById('rise-time').textContent = '--:--';
+                document.getElementById('set-time').textContent = '--:--';
             }
             
             if (!['sun', 'moon'].includes(currentCelestialBody)) {
@@ -2152,42 +2129,20 @@ setInterval(() => {
         // ===== SENSOR-UPDATES MIT GIMBAL LOCK PROTECTION =====
 let orientationSensor = null;
 
-        let warningShown = false; // Verhindert mehrfaches Anzeigen der Warnung
-        
-        function showBrowserWarning() {
-            if (warningShown) return;
-            warningShown = true;
-            
-            const warning = document.createElement('div');
-            warning.style.cssText = `
-                position: fixed; top: 10px; left: 10px; right: 10px; 
-                background: rgba(255, 60, 60, 0.9); color: white; 
-                padding: 12px; border-radius: 8px; z-index: 10000; 
-                text-align: center; font-family: sans-serif; font-size: 14px; box-shadow: 0 4px 10px rgba(0,0,0,0.5);
-            `;
-            warning.innerHTML = `
-                <strong>Hinweis:</strong> Dein Browser unterstützt nicht die präzisen AR-Sensoren. <br>
-                Das Erlebnis könnte leicht ruckeln. Für die beste Erfahrung nutze bitte einen <strong>Chrome-basierten Browser</strong>.
-                <br><button id="close-warning" style="margin-top: 10px; padding: 6px 12px; background: white; color: red; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Verstanden</button>
-            `;
-            document.body.appendChild(warning);
-        
-            document.getElementById('close-warning').addEventListener('click', () => {
-                warning.remove();
-            });
+        function resetSmoothingBuffers() {
+            smoothingBuffers.azimuth = [];
+            smoothingBuffers.pitch = [];
+            smoothingBuffers.roll = [];
         }
-        
+
         function startSensorUpdates() {
             if (orientationSensor) {
                 orientationSensor.stop();
                 orientationSensor = null;
             }
-        
             window.removeEventListener('deviceorientationabsolute', handleDeviceOrientationLegacy, true);
             window.removeEventListener('deviceorientation', handleDeviceOrientationLegacy, true);
-        
-            resetSmoothingBuffers();
-        
+
             if (compassConfig.useAdvancedSensor && 'AbsoluteOrientationSensor' in window) {
                 try {
                     orientationSensor = new AbsoluteOrientationSensor({ frequency: 60, referenceFrame: 'device' });
@@ -2205,25 +2160,18 @@ let orientationSensor = null;
                     console.warn("Konnte AbsoluteOrientationSensor nicht starten:", error);
                 }
             }
-        
             fallbackToLegacySensor();
         }
-        
+
         function fallbackToLegacySensor() {
-            window.removeEventListener('deviceorientationabsolute', handleDeviceOrientationLegacy, true);
-            window.removeEventListener('deviceorientation', handleDeviceOrientationLegacy, true);
-        
             if (compassConfig.useWebkit && typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
                 window.addEventListener('deviceorientation', handleDeviceOrientationLegacy, true);
-                console.log("Legacy Sensor (iOS/WebKit) gestartet.");
-            } else if ('ondeviceorientationabsolute' in window && compassConfig.useAbsolute) {
-                // WICHTIG: Das hier macht vrsolar9-2.html besser! Es prüft, ob ondeviceorientationabsolute wirklich existiert.
+            } else if (compassConfig.useAbsolute) {
                 window.addEventListener('deviceorientationabsolute', handleDeviceOrientationLegacy, true);
-                console.log("Legacy Sensor (deviceorientationabsolute) gestartet.");
             } else {
                 window.addEventListener('deviceorientation', handleDeviceOrientationLegacy, true);
-                console.log("Legacy Sensor (deviceorientation) gestartet.");
             }
+            console.log("Legacy Sensor (DeviceOrientation) gestartet.");
         }
 
         function handleAdvancedSensorReading() {
@@ -2245,26 +2193,15 @@ let orientationSensor = null;
             applySensorValues(rawAzimuth, rawPitch, rawRoll, true, null);
         }
 
-        // Globale Variablen für Firefox Frame-Glättung
-        let pendingLegacyEvent = null;
-        let legacyUpdateScheduled = false;
-        
-        let legacyAlphaFiltered = null;
-        let legacyBetaFiltered = null;
-        let legacyGammaFiltered = null;
-        let legacyLastStableHeading = null;
-        let legacyLastStablePitch = 0;
-        let legacyLastStableRoll = 0;
-        
         function handleDeviceOrientationLegacy(event) {
             if (event.alpha == null && event.beta == null && event.gamma == null) return;
-        
+
             let rawAlpha = event.alpha || 0;
             let beta = event.beta || 0;
             let gamma = event.gamma || 0;
-        
+
             let compassHeading = 0;
-        
+
             if (event.webkitCompassHeading !== undefined && compassConfig.useWebkit) {
                 compassHeading = event.webkitCompassHeading;
             } else if (event.absolute === true && compassConfig.useAbsolute) {
@@ -2272,51 +2209,48 @@ let orientationSensor = null;
             } else {
                 compassHeading = rawAlpha;
             }
-        
+
             if (compassConfig.invertCompass) {
                 compassHeading = (360 - compassHeading) % 360;
             }
-        
+
             if (compassConfig.reverseCompass) {
                 compassHeading = (360 - compassHeading) % 360;
             }
-        
+
             compassHeading = (compassHeading + compassConfig.manualOffset + 360) % 360;
-        
+
             let correctedPitch = beta - 90;
-        
+
             compassHeading = applyGimbalLockProtection(compassHeading, correctedPitch);
-        
+
             smoothingBuffers.azimuth.push(compassHeading);
             smoothingBuffers.pitch.push(correctedPitch);
             smoothingBuffers.roll.push(gamma);
-        
+
             const adaptiveSmoothingFactor = getAdaptiveSmoothingFactor(correctedPitch);
-        
+
             for (let axis in smoothingBuffers) {
                 if (smoothingBuffers[axis].length > adaptiveSmoothingFactor) {
                     smoothingBuffers[axis].shift();
                 }
             }
-        
-            deviceOrientation.azimuth =
-                (smoothingBuffers.azimuth.reduce((a, b) => a + b, 0) / smoothingBuffers.azimuth.length + calibrationOffset + 360) % 360;
-            deviceOrientation.pitch =
-                smoothingBuffers.pitch.reduce((a, b) => a + b, 0) / smoothingBuffers.pitch.length;
-            deviceOrientation.roll =
-                smoothingBuffers.roll.reduce((a, b) => a + b, 0) / smoothingBuffers.roll.length;
-        
+
+            deviceOrientation.azimuth = (smoothingBuffers.azimuth.reduce((a, b) => a + b, 0) / smoothingBuffers.azimuth.length + calibrationOffset + 360) % 360;
+            deviceOrientation.pitch = smoothingBuffers.pitch.reduce((a, b) => a + b, 0) / smoothingBuffers.pitch.length;
+            deviceOrientation.roll = smoothingBuffers.roll.reduce((a, b) => a + b, 0) / smoothingBuffers.roll.length;
+
             updateHorizonLine();
             updateCompassRose();
             update3DDirectionArrow();
             updateCelestialInViewport();
             updateStarsDisplay();
             updateSensorMini();
-        
+
             if (viewConfig.showPathInFOV) {
                 drawCelestialPathInFOV();
             }
-        
+
             if (debugMode) {
                 updateDebugDisplay(event, {
                     rawAlpha,
@@ -2329,52 +2263,14 @@ let orientationSensor = null;
             }
         }
 
-        function resetSmoothingBuffers() {
-            smoothingBuffers.azimuth = [];
-            smoothingBuffers.pitch = [];
-            smoothingBuffers.roll = [];
-        }
-        
-        // Neue Funktion, die das eigentliche Zeichnen übernimmt
-        function processLegacySensorData() {
-            legacyUpdateScheduled = false; // Wieder freigeben
-            const event = pendingLegacyEvent;
-            
-            if (!event || event.alpha === null || event.beta === null || event.gamma === null) return;
-        
-            let rawAzimuth = 0;
-            
-            // Berechnung der Werte (wie in deinem Originalcode)
-            if (event.webkitCompassHeading !== undefined && compassConfig.useWebkit) {
-                rawAzimuth = event.webkitCompassHeading;
-            } else {
-                // Bei 'absolute' ist alpha die Himmelsrichtung invertiert
-                rawAzimuth = (360 - event.alpha) % 360;
-            }
-        
-            let correctedPitch = event.beta - 90;
-        
-            if (Math.abs(correctedPitch) < 1.5) {
-                correctedPitch = 0;
-            }
-        
-            applySensorValues(rawAzimuth, correctedPitch, event.gamma, false, event);
-        }
-
         function applySensorValues(rawAzimuth, rawPitch, rawRoll, isAdvanced, rawEvent) {
-            // NEU: Wenn Firefox (Legacy-Sensor) genutzt wird, die Glättung aggressiv reduzieren, 
-            // um die Trägheit wegzubekommen.
-            const activeSmoothingFactor = isAdvanced ? 
-                compassConfig.smoothingFactor : 
-                Math.max(1, Math.floor(compassConfig.smoothingFactor / 3));
-        
             let currentHeading = rawAzimuth;
 
             if (compassConfig.invertCompass) {
                 currentHeading = (360 - currentHeading) % 360;
             }
             if (compassConfig.reverseCompass) {
-                currentHeading = (360 - currentHeading) % 360;
+                currentHeading = (currentHeading + 180) % 360;
             }
 
             currentHeading = (currentHeading + compassConfig.manualOffset + 360) % 360;
@@ -2387,7 +2283,7 @@ let orientationSensor = null;
             smoothingBuffers.pitch.push(rawPitch);
             smoothingBuffers.roll.push(rawRoll);
 
-            const adaptiveSmoothingFactor = getAdaptiveSmoothingFactor(rawPitch, isAdvanced);
+            const adaptiveSmoothingFactor = getAdaptiveSmoothingFactor(rawPitch);
 
             for (let axis in smoothingBuffers) {
                 if (smoothingBuffers[axis].length > adaptiveSmoothingFactor) {
@@ -2860,7 +2756,7 @@ let orientationSensor = null;
                 <div class="debug-value">Current Body: ${currentCelestialBody.toUpperCase()}</div>
                 <div class="debug-value">Gimbal Lock Zone: ${values.gimbalLockActive ? 'ACTIVE' : 'NORMAL'}</div>
                 <div class="debug-value">Pitch: ${deviceOrientation.pitch.toFixed(1)}°</div>
-                <div class="debug-value">Smoothing Factor: ${getAdaptiveSmoothingFactor(deviceOrientation.pitch, orientationSensor !== null)}</div>
+                <div class="debug-value">Smoothing Factor: ${getAdaptiveSmoothingFactor(deviceOrientation.pitch)}</div>
                 <div class="debug-value">Visible Bodies: ${visibleBodies}/10</div>
                 <div class="debug-value">Stars Visible: ${visibleStars}/100</div>
                 <div class="debug-value">FOV: ${viewConfig.fieldOfView}°</div>
@@ -3206,58 +3102,6 @@ let orientationSensor = null;
                 }
             });
         }
-
-        function checkBrowserCompatibility() {
-            // Prüfen, ob der moderne Sensor unterstützt wird
-            // (Fehlt in Firefox, Fennec, Safari etc.)
-            const isChromium = 'AbsoluteOrientationSensor' in window;
-            
-            if (!isChromium) {
-                const warningOverlay = document.createElement('div');
-                warningOverlay.id = 'browser-warning-overlay';
-                warningOverlay.style.cssText = `
-                    position: fixed;
-                    top: 0; left: 0; width: 100vw; height: 100vh;
-                    background: rgba(0, 0, 0, 0.85);
-                    backdrop-filter: blur(5px);
-                    z-index: 999999;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    color: white;
-                    font-family: sans-serif;
-                    padding: 20px;
-                    box-sizing: border-box;
-                `;
-                
-                warningOverlay.innerHTML = `
-                    <div style="background: #001122; border: 2px solid #ffb400; border-radius: 12px; padding: 25px; max-width: 400px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.8);">
-                        <h2 style="color: #ffb400; margin-top: 0; margin-bottom: 15px;">Browser wird nicht empfohlen</h2>
-                        <p style="font-size: 15px; line-height: 1.5; margin-bottom: 20px; color: #ddd;">
-                            Du nutzt offenbar Firefox, Safari oder einen ähnlichen Browser. <br><br>
-                            Dieser Browser blockiert moderne Hochgeschwindigkeits-Sensoren. Die AR-Ansicht wird daher <strong>sehr träge reagieren und stark ruckeln</strong>.
-                        </p>
-                        <p style="font-size: 15px; color: #4CAF50; font-weight: bold; margin-bottom: 25px;">
-                            Bitte öffne diese Seite in Google Chrome, Microsoft Edge oder Samsung Internet für ein flüssiges Erlebnis.
-                        </p>
-                        <button id="dismiss-browser-warning" style="background: #ffb400; color: #000; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; font-size: 16px; cursor: pointer; width: 100%; transition: transform 0.2s;">
-                            Trotzdem fortfahren (Ruckeln akzeptieren)
-                        </button>
-                    </div>
-                `;
-                
-                document.body.appendChild(warningOverlay);
-                
-                // Button-Klick entfernt das Overlay, damit man es trotzdem testen kann
-                document.getElementById('dismiss-browser-warning').addEventListener('click', () => {
-                    warningOverlay.style.display = 'none';
-                });
-            }
-        }
-        
-        // Warnung direkt beim Start der App prüfen und anzeigen
-        window.addEventListener('DOMContentLoaded', checkBrowserCompatibility);
-        
         </script>
 </body>
 </html>
