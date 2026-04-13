@@ -2544,6 +2544,42 @@ let orientationSensor = null;
             }
         }
 
+
+        function initializeCamera() {
+            return new Promise((resolve, reject) => {
+                // Prüfen, ob der Browser die Kamera-API unterstützt (erfordert meist HTTPS)
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    alert('Kamera-Zugriff wird von diesem Browser nicht unterstützt oder die Seite läuft nicht über HTTPS.');
+                    reject(new Error('MediaDevices API not supported'));
+                    return;
+                }
+                
+                // Kamera-Stream anfordern (Rückkamera)
+                navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'environment' // Nutzt standardmäßig die Hauptkamera hinten
+                    }
+                })
+                .then(stream => {
+                    const cameraElement = document.getElementById('camera-stream');
+                    cameraElement.srcObject = stream;
+                    cameraStream = stream;
+                    
+                    // Wichtig für iOS/Safari, damit es nicht im Vollbild öffnet
+                    cameraElement.setAttribute('playsinline', true);
+                    cameraElement.play();
+                    
+                    resolve(stream);
+                })
+                .catch(err => {
+                    console.error("Kamera-Fehler:", err);
+                    alert('Kamera konnte nicht gestartet werden: ' + err.message);
+                    reject(err);
+                });
+            });
+        }
+        
+
         function toggleCamera() {
 
             if (!cameraEnabled) {
