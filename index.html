@@ -1373,18 +1373,30 @@ setInterval(() => {
             return Math.min(1, Math.max(0, distanceFromCritical / transitionRange));
         }
 
-        function getAdaptiveSmoothingFactor(pitch) {
-            if (!gimbalLockConfig.enabled) return compassConfig.smoothingFactor;
-
+        // Wir fügen "isAdvanced" als zweites Argument hinzu
+        function getAdaptiveSmoothingFactor(pitch, isAdvanced = true) {
+            // 1. Hole den eingestellten Basis-Glättungswert der App
+            let baseFactor = compassConfig.smoothingFactor;
+            
+            // 2. WICHTIG: Wenn es der Legacy-Sensor (Firefox) ist, 
+            // reduzieren wir die Glättung extrem (auf ca. ein Drittel), um die Trägheit zu beenden.
+            if (!isAdvanced) {
+                baseFactor = Math.max(1, Math.floor(baseFactor / 3));
+            }
+        
+            // 3. Wenn Gimbal-Lock aus ist, direkt den (angepassten) Base-Factor zurückgeben
+            if (!gimbalLockConfig.enabled) return baseFactor;
+        
+            // 4. Gimbal-Lock-Multiplikatoren anwenden
             const absP = Math.abs(pitch);
             const horizontalDistance = 90 - absP;
-
+        
             if (horizontalDistance <= gimbalLockConfig.criticalZoneEnd) {
-                return compassConfig.smoothingFactor * 3;
+                return baseFactor * 3;
             } else if (horizontalDistance <= gimbalLockConfig.deadZoneEnd) {
-                return compassConfig.smoothingFactor * 2;
+                return baseFactor * 2;
             } else {
-                return compassConfig.smoothingFactor;
+                return baseFactor;
             }
         }
 
@@ -2187,15 +2199,26 @@ let orientationSensor = null;
             showBrowserWarning();
             fallbackToLegacySensor();
         }
+        
         function fallbackToLegacySensor() {
+            window.removeEventListener('deviceorientationabsolute', handleDeviceOrientationLegacy, true);
+            window.removeEventListener('deviceorientation', handleDeviceOrientationLegacy, true);
+        
+            // iOS/Webkit-Erkennung (bleibt unangetastet)
             if (compassConfig.useWebkit && typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
                 window.addEventListener('deviceorientation', handleDeviceOrientationLegacy, true);
-            } else if (compassConfig.useAbsolute) {
+                console.log("Legacy Sensor (iOS Webkit) gestartet.");
+            } 
+            // NEU: Firefox Android bevorzugt ondeviceorientationabsolute!
+            else if ('ondeviceorientationabsolute' in window) {
                 window.addEventListener('deviceorientationabsolute', handleDeviceOrientationLegacy, true);
-            } else {
+                console.log("Legacy Sensor (deviceorientationabsolute - z.B. Firefox) gestartet.");
+            } 
+            // Fallback für alle anderen alten Browser
+            else {
                 window.addEventListener('deviceorientation', handleDeviceOrientationLegacy, true);
+                console.log("Legacy Sensor (normales deviceorientation) gestartet.");
             }
-            console.log("Legacy Sensor (DeviceOrientation) gestartet.");
         }
 
         function handleAdvancedSensorReading() {
@@ -2217,32 +2240,54 @@ let orientationSensor = null;
             applySensorValues(rawAzimuth, rawPitch, rawRoll, true, null);
         }
 
+        // Globale Variablen für Firefox Frame-Glättung
+        let pendingLegacyEvent = null;
+        let legacyUpdateScheduled = false;
+        
         function handleDeviceOrientationLegacy(event) {
-            let alpha = event.alpha;
-            let beta = event.beta;
-            let gamma = event.gamma;
-
-            if (alpha === null || beta === null || gamma === null) return;
-
+            // Werte nur zwischenspeichern
+            pendingLegacyEvent = event;
+            
+            // Nur einmal pro Frame updaten, verhindert Firefox-Trägheit
+            if (!legacyUpdateScheduled) {
+                legacyUpdateScheduled = true;
+                requestAnimationFrame(processLegacySensorData);
+            }
+        }
+        
+        // Neue Funktion, die das eigentliche Zeichnen übernimmt
+        function processLegacySensorData() {
+            legacyUpdateScheduled = false; // Wieder freigeben
+            const event = pendingLegacyEvent;
+            
+            if (!event || event.alpha === null || event.beta === null || event.gamma === null) return;
+        
             let rawAzimuth = 0;
+            
+            // Berechnung der Werte (wie in deinem Originalcode)
             if (event.webkitCompassHeading !== undefined && compassConfig.useWebkit) {
                 rawAzimuth = event.webkitCompassHeading;
-            } else if (event.absolute === true && compassConfig.useAbsolute) {
-                rawAzimuth = (360 - alpha) % 360;
             } else {
-                rawAzimuth = alpha;
+                // Bei 'absolute' ist alpha die Himmelsrichtung invertiert
+                rawAzimuth = (360 - event.alpha) % 360;
             }
-
-            let correctedPitch = beta - 90;
-
+        
+            let correctedPitch = event.beta - 90;
+        
             if (Math.abs(correctedPitch) < 1.5) {
                 correctedPitch = 0;
             }
-
-            applySensorValues(rawAzimuth, correctedPitch, gamma, false, event);
+        
+            applySensorValues(rawAzimuth, correctedPitch, event.gamma, false, event);
         }
 
         function applySensorValues(rawAzimuth, rawPitch, rawRoll, isAdvanced, rawEvent) {
+            // NEU: Wenn Firefox (Legacy-Sensor) genutzt wird, die Glättung aggressiv reduzieren, 
+            // um die Trägheit wegzubekommen.
+            const activeSmoothingFactor = isAdvanced ? 
+                compassConfig.smoothingFactor : 
+                Math.max(1, Math.floor(compassConfig.smoothingFactor / 3));
+        
             let currentHeading = rawAzimuth;
 
             if (compassConfig.invertCompass) {
