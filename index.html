@@ -565,8 +565,6 @@
     <!-- AR-Overlay für 360°-Himmelsobjekte -->
     <canvas id="ar-overlay"></canvas>
     
-    <!-- 360°-Himmelskörper-Pfad -->
-    <div id="path-mode-badge" style="position: fixed; top: 92px; left: 50%; transform: translateX(-50%); z-index: 150; padding: 6px 10px; border-radius: 12px; background: rgba(0,0,0,0.45); color: white; font-size: 12px; backdrop-filter: blur(4px);">24h / 360° Bahn</div>
     <svg id="celestial-path"></svg>
     
     <!-- Horizont-Linie -->
@@ -2963,8 +2961,13 @@ let orientationSensor = null;
                 const pos = getBodyAltAz(currentCelestialBody, testTime, userLocation.lat, userLocation.lon);
                 if (!pos || !Number.isFinite(pos.azimuth) || !Number.isFinite(pos.altitude)) continue;
 
-                const x = (pos.azimuth / 360) * width;
-                const y = ((90 - pos.altitude) / 180) * height;
+                // KORREKTE DYNAMISCHE AR-BERECHNUNG
+                const azimuthDiff = getShortestAngle(deviceOrientation.azimuth, pos.azimuth);
+                const altitudeDiff = pos.altitude - deviceOrientation.pitch;
+                
+                const fovHalf = viewConfig.fieldOfView / 2;
+                const x = (azimuthDiff / fovHalf) * (width / 2) + (width / 2);
+                const y = (-altitudeDiff / fovHalf) * (height / 2) + (height / 2);
                 pathPoints.push({ x, y, hour, altitude: pos.altitude, azimuth: pos.azimuth, time: testTime });
             }
 
