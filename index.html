@@ -3145,6 +3145,58 @@ let orientationSensor = null;
                 }
             });
         }
+
+        function checkBrowserCompatibility() {
+            // Prüfen, ob der moderne Sensor unterstützt wird
+            // (Fehlt in Firefox, Fennec, Safari etc.)
+            const isChromium = 'AbsoluteOrientationSensor' in window;
+            
+            if (!isChromium) {
+                const warningOverlay = document.createElement('div');
+                warningOverlay.id = 'browser-warning-overlay';
+                warningOverlay.style.cssText = `
+                    position: fixed;
+                    top: 0; left: 0; width: 100vw; height: 100vh;
+                    background: rgba(0, 0, 0, 0.85);
+                    backdrop-filter: blur(5px);
+                    z-index: 999999;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: white;
+                    font-family: sans-serif;
+                    padding: 20px;
+                    box-sizing: border-box;
+                `;
+                
+                warningOverlay.innerHTML = `
+                    <div style="background: #001122; border: 2px solid #ffb400; border-radius: 12px; padding: 25px; max-width: 400px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.8);">
+                        <h2 style="color: #ffb400; margin-top: 0; margin-bottom: 15px;">Browser wird nicht empfohlen</h2>
+                        <p style="font-size: 15px; line-height: 1.5; margin-bottom: 20px; color: #ddd;">
+                            Du nutzt offenbar Firefox, Safari oder einen ähnlichen Browser. <br><br>
+                            Dieser Browser blockiert moderne Hochgeschwindigkeits-Sensoren. Die AR-Ansicht wird daher <strong>sehr träge reagieren und stark ruckeln</strong>.
+                        </p>
+                        <p style="font-size: 15px; color: #4CAF50; font-weight: bold; margin-bottom: 25px;">
+                            Bitte öffne diese Seite in Google Chrome, Microsoft Edge oder Samsung Internet für ein flüssiges Erlebnis.
+                        </p>
+                        <button id="dismiss-browser-warning" style="background: #ffb400; color: #000; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; font-size: 16px; cursor: pointer; width: 100%; transition: transform 0.2s;">
+                            Trotzdem fortfahren (Ruckeln akzeptieren)
+                        </button>
+                    </div>
+                `;
+                
+                document.body.appendChild(warningOverlay);
+                
+                // Button-Klick entfernt das Overlay, damit man es trotzdem testen kann
+                document.getElementById('dismiss-browser-warning').addEventListener('click', () => {
+                    warningOverlay.style.display = 'none';
+                });
+            }
+        }
+        
+        // Warnung direkt beim Start der App prüfen und anzeigen
+        window.addEventListener('DOMContentLoaded', checkBrowserCompatibility);
+        
         </script>
 </body>
 </html>
