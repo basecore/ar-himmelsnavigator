@@ -1953,7 +1953,7 @@ setInterval(() => {
                     document.getElementById('moon-phase').textContent = phaseName;
                 }
 
-            } else if (currentCelestialBody === 'europa-clipper' && userLocation) {
+            } else if (currentCelestialBody === 'europa-clipper' && userLocation.lat && userLocation.lon) {
                 const rs = calculateClipperRiseSetCached(
                     now,
                     userLocation.lat,
@@ -1961,10 +1961,13 @@ setInterval(() => {
                 );
                 document.getElementById('rise-time').textContent = formatRiseSetTime(rs.rise);
                 document.getElementById('set-time').textContent = formatRiseSetTime(rs.set);
-            } else {
+            } else if (userLocation.lat && userLocation.lon) {
                 const riseSet = calculateRiseSet(currentCelestialBody, now, userLocation.lat, userLocation.lon);
                 document.getElementById('rise-time').textContent = formatRiseSetTime(riseSet.rise);
                 document.getElementById('set-time').textContent = formatRiseSetTime(riseSet.set);
+            } else {
+                document.getElementById('rise-time').textContent = '--:--';
+                document.getElementById('set-time').textContent = '--:--';
             }
             
             if (!['sun', 'moon'].includes(currentCelestialBody)) {
@@ -2258,13 +2261,13 @@ let orientationSensor = null;
         
         function handleDeviceOrientationLegacy(event) {
             if (event.alpha == null && event.beta == null && event.gamma == null) return;
-        
+            
             let rawAlpha = event.alpha || 0;
             let beta = event.beta || 0;
             let gamma = event.gamma || 0;
-        
+            
             let compassHeading = 0;
-        
+            
             if (event.webkitCompassHeading !== undefined && compassConfig.useWebkit) {
                 compassHeading = event.webkitCompassHeading;
             } else if (event.absolute === true && compassConfig.useAbsolute) {
@@ -2272,51 +2275,50 @@ let orientationSensor = null;
             } else {
                 compassHeading = rawAlpha;
             }
-        
+            
             if (compassConfig.invertCompass) {
                 compassHeading = (360 - compassHeading) % 360;
             }
-        
+            
             if (compassConfig.reverseCompass) {
                 compassHeading = (360 - compassHeading) % 360;
             }
-        
+            
             compassHeading = (compassHeading + compassConfig.manualOffset + 360) % 360;
-        
+            
             let correctedPitch = beta - 90;
-        
+            
+            // **GIMBAL LOCK PROTECTION ANWENDEN**
             compassHeading = applyGimbalLockProtection(compassHeading, correctedPitch);
-        
+            
             smoothingBuffers.azimuth.push(compassHeading);
             smoothingBuffers.pitch.push(correctedPitch);
             smoothingBuffers.roll.push(gamma);
-        
+            
+            // **ADAPTIVE GLÄTTUNG JE NACH NEIGUNG**
             const adaptiveSmoothingFactor = getAdaptiveSmoothingFactor(correctedPitch);
-        
+            
             for (let axis in smoothingBuffers) {
                 if (smoothingBuffers[axis].length > adaptiveSmoothingFactor) {
                     smoothingBuffers[axis].shift();
                 }
             }
-        
-            deviceOrientation.azimuth =
-                (smoothingBuffers.azimuth.reduce((a, b) => a + b, 0) / smoothingBuffers.azimuth.length + calibrationOffset + 360) % 360;
-            deviceOrientation.pitch =
-                smoothingBuffers.pitch.reduce((a, b) => a + b, 0) / smoothingBuffers.pitch.length;
-            deviceOrientation.roll =
-                smoothingBuffers.roll.reduce((a, b) => a + b, 0) / smoothingBuffers.roll.length;
-        
+            
+            deviceOrientation.azimuth = (smoothingBuffers.azimuth.reduce((a, b) => a + b, 0) / smoothingBuffers.azimuth.length + calibrationOffset + 360) % 360;
+            deviceOrientation.pitch = smoothingBuffers.pitch.reduce((a, b) => a + b, 0) / smoothingBuffers.pitch.length;
+            deviceOrientation.roll = smoothingBuffers.roll.reduce((a, b) => a + b, 0) / smoothingBuffers.roll.length;
+            
             updateHorizonLine();
             updateCompassRose();
             update3DDirectionArrow();
             updateCelestialInViewport();
             updateStarsDisplay();
             updateSensorMini();
-        
+            
             if (viewConfig.showPathInFOV) {
                 drawCelestialPathInFOV();
             }
-        
+            
             if (debugMode) {
                 updateDebugDisplay(event, {
                     rawAlpha,
@@ -2325,99 +2327,6 @@ let orientationSensor = null;
                     compassHeading: compassHeading,
                     finalAzimuth: deviceOrientation.azimuth,
                     gimbalLockActive: isInGimbalLockZone(correctedPitch)
-                });
-            }
-        }
-
-        function resetSmoothingBuffers() {
-            smoothingBuffers.azimuth = [];
-            smoothingBuffers.pitch = [];
-            smoothingBuffers.roll = [];
-        }
-        
-        // Neue Funktion, die das eigentliche Zeichnen übernimmt
-        function processLegacySensorData() {
-            legacyUpdateScheduled = false; // Wieder freigeben
-            const event = pendingLegacyEvent;
-            
-            if (!event || event.alpha === null || event.beta === null || event.gamma === null) return;
-        
-            let rawAzimuth = 0;
-            
-            // Berechnung der Werte (wie in deinem Originalcode)
-            if (event.webkitCompassHeading !== undefined && compassConfig.useWebkit) {
-                rawAzimuth = event.webkitCompassHeading;
-            } else {
-                // Bei 'absolute' ist alpha die Himmelsrichtung invertiert
-                rawAzimuth = (360 - event.alpha) % 360;
-            }
-        
-            let correctedPitch = event.beta - 90;
-        
-            if (Math.abs(correctedPitch) < 1.5) {
-                correctedPitch = 0;
-            }
-        
-            applySensorValues(rawAzimuth, correctedPitch, event.gamma, false, event);
-        }
-
-        function applySensorValues(rawAzimuth, rawPitch, rawRoll, isAdvanced, rawEvent) {
-            // NEU: Wenn Firefox (Legacy-Sensor) genutzt wird, die Glättung aggressiv reduzieren, 
-            // um die Trägheit wegzubekommen.
-            const activeSmoothingFactor = isAdvanced ? 
-                compassConfig.smoothingFactor : 
-                Math.max(1, Math.floor(compassConfig.smoothingFactor / 3));
-        
-            let currentHeading = rawAzimuth;
-
-            if (compassConfig.invertCompass) {
-                currentHeading = (360 - currentHeading) % 360;
-            }
-            if (compassConfig.reverseCompass) {
-                currentHeading = (360 - currentHeading) % 360;
-            }
-
-            currentHeading = (currentHeading + compassConfig.manualOffset + 360) % 360;
-
-            if (!isAdvanced) {
-                currentHeading = applyGimbalLockProtection(currentHeading, rawPitch);
-            }
-
-            smoothingBuffers.azimuth.push(currentHeading);
-            smoothingBuffers.pitch.push(rawPitch);
-            smoothingBuffers.roll.push(rawRoll);
-
-            const adaptiveSmoothingFactor = getAdaptiveSmoothingFactor(rawPitch, isAdvanced);
-
-            for (let axis in smoothingBuffers) {
-                if (smoothingBuffers[axis].length > adaptiveSmoothingFactor) {
-                    smoothingBuffers[axis].shift();
-                }
-            }
-
-            deviceOrientation.azimuth = (getCircularMean(smoothingBuffers.azimuth) + calibrationOffset + 360) % 360;
-            deviceOrientation.pitch = smoothingBuffers.pitch.reduce((a, b) => a + b, 0) / smoothingBuffers.pitch.length;
-            deviceOrientation.roll = smoothingBuffers.roll.reduce((a, b) => a + b, 0) / smoothingBuffers.roll.length;
-
-            updateHorizonLine();
-            updateCompassRose();
-            update3DDirectionArrow();
-            updateCelestialInViewport();
-            updateStarsDisplay();
-            updateSensorMini();
-
-            if (viewConfig.showPathInFOV) {
-                drawCelestialPathInFOV();
-            }
-
-            if (debugMode) {
-                updateDebugDisplay(rawEvent || {}, { 
-                    rawAlpha: rawAzimuth, 
-                    rawBeta: rawPitch + 90,
-                    correctedPitch: rawPitch,
-                    compassHeading: currentHeading,
-                    finalAzimuth: deviceOrientation.azimuth,
-                    gimbalLockActive: !isAdvanced && isInGimbalLockZone(rawPitch)
                 });
             }
         }
