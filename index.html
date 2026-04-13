@@ -2240,7 +2240,8 @@ let orientationSensor = null;
             smoothingBuffers.pitch.push(correctedPitch);
             smoothingBuffers.roll.push(gamma);
 
-            const adaptiveSmoothingFactor = getAdaptiveSmoothingFactor(rawPitch, true);
+            // ÄNDERUNG HIER: "rawPitch" wurde zu "correctedPitch" geändert (wie in vrsolar9-2.html)
+            const adaptiveSmoothingFactor = getAdaptiveSmoothingFactor(correctedPitch, false);
 
             for (let axis in smoothingBuffers) {
                 if (smoothingBuffers[axis].length > adaptiveSmoothingFactor) {
