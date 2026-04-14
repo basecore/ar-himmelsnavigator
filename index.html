@@ -2167,6 +2167,14 @@ let orientationSensor = null;
         }
 
         function fallbackToLegacySensor() {
+            if (orientationSensor) {
+                try {
+                    orientationSensor.removeEventListener('reading', handleAdvancedSensorReading);
+                    orientationSensor.stop();
+                } catch (e) {}
+                orientationSensor = null;
+            }
+        
             window.removeEventListener('deviceorientationabsolute', handleDeviceOrientationLegacy, true);
             window.removeEventListener('deviceorientation', handleDeviceOrientationLegacy, true);
         
@@ -2207,73 +2215,24 @@ let orientationSensor = null;
 
         function handleDeviceOrientationLegacy(event) {
             if (event.alpha == null && event.beta == null && event.gamma == null) return;
-
+        
             let rawAlpha = event.alpha || 0;
             let beta = event.beta || 0;
             let gamma = event.gamma || 0;
-
-            let compassHeading = 0;
-
+        
+            let rawHeading = 0;
+        
             if (event.webkitCompassHeading !== undefined && compassConfig.useWebkit) {
-                compassHeading = event.webkitCompassHeading;
+                rawHeading = event.webkitCompassHeading;
             } else if (event.absolute === true && compassConfig.useAbsolute) {
-                compassHeading = (360 - rawAlpha) % 360;
+                rawHeading = (360 - rawAlpha) % 360;
             } else {
-                compassHeading = rawAlpha;
+                rawHeading = rawAlpha;
             }
-
-            if (compassConfig.invertCompass) {
-                compassHeading = (360 - compassHeading) % 360;
-            }
-
-            if (compassConfig.reverseCompass) {
-                compassHeading = (360 - compassHeading) % 360;
-            }
-
-            compassHeading = (compassHeading + compassConfig.manualOffset + 360) % 360;
-
-            let correctedPitch = beta - 90;
-
-            compassHeading = applyGimbalLockProtection(compassHeading, correctedPitch);
-
-            smoothingBuffers.azimuth.push(compassHeading);
-            smoothingBuffers.pitch.push(correctedPitch);
-            smoothingBuffers.roll.push(gamma);
-
-            // ÄNDERUNG HIER: "rawPitch" wurde zu "correctedPitch" geändert (wie in vrsolar9-2.html)
-            const adaptiveSmoothingFactor = getAdaptiveSmoothingFactor(correctedPitch, false);
-
-            for (let axis in smoothingBuffers) {
-                if (smoothingBuffers[axis].length > adaptiveSmoothingFactor) {
-                    smoothingBuffers[axis].shift();
-                }
-            }
-
-            deviceOrientation.azimuth = (smoothingBuffers.azimuth.reduce((a, b) => a + b, 0) / smoothingBuffers.azimuth.length + calibrationOffset + 360) % 360;
-            deviceOrientation.pitch = smoothingBuffers.pitch.reduce((a, b) => a + b, 0) / smoothingBuffers.pitch.length;
-            deviceOrientation.roll = smoothingBuffers.roll.reduce((a, b) => a + b, 0) / smoothingBuffers.roll.length;
-
-            updateHorizonLine();
-            updateCompassRose();
-            update3DDirectionArrow();
-            updateCelestialInViewport();
-            updateStarsDisplay();
-            updateSensorMini();
-
-            if (viewConfig.showPathInFOV) {
-                drawCelestialPathInFOV();
-            }
-
-            if (debugMode) {
-                updateDebugDisplay(event, {
-                    rawAlpha,
-                    rawBeta: beta,
-                    correctedPitch: correctedPitch,
-                    compassHeading: compassHeading,
-                    finalAzimuth: deviceOrientation.azimuth,
-                    gimbalLockActive: isInGimbalLockZone(correctedPitch)
-                });
-            }
+        
+            let rawPitch = beta - 90;
+        
+            applySensorValues(rawHeading, rawPitch, gamma, false, event);
         }
 
         function applySensorValues(rawAzimuth, rawPitch, rawRoll, isAdvanced, rawEvent) {
@@ -2296,7 +2255,7 @@ let orientationSensor = null;
             smoothingBuffers.pitch.push(rawPitch);
             smoothingBuffers.roll.push(rawRoll);
 
-            const adaptiveSmoothingFactor = getAdaptiveSmoothingFactor(rawPitch);
+            const adaptiveSmoothingFactor = getAdaptiveSmoothingFactor(rawPitch, isAdvanced);
 
             for (let axis in smoothingBuffers) {
                 if (smoothingBuffers[axis].length > adaptiveSmoothingFactor) {
