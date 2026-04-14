@@ -16,6 +16,8 @@ Ein webbasierter Augmented-Reality-Himmelsnavigator, der direkt im mobilen Brows
 * **Lokale Berechnung:** Nutzt die `SunCalc`-Bibliothek zur Berechnung der Ephemeriden – keine ständigen API-Anfragen an die NASA nötig.
 * **Sternenkarte:** Zeigt optional die 100 hellsten Sterne zur besseren Orientierung am Nachthimmel.
 * **Gimbal Lock Protection:** Stabilisiert den Kompass, wenn das Handy steil nach oben oder unten gehalten wird.
+* **Smarte Initialisierung:** Nach dem AR-Start benötigt die App kurz etwa 3–5 Sekunden, um die tatsächlichen Standorte zu berechnen, anzuzeigen und zu aktualisieren.
+* **Browser-Kompatibilität:** In Chromium-basierten Browsern wird der moderne Sensor-Modus verwendet; in Firefox und anderen nicht-Chromium-basierten Browsern greift automatisch ein Legacy-Modus für Kompass- und Bewegungssensoren.
 
 ## 📱 Nutzung auf dem Smartphone
 Da die App auf sensible Hardware zugreift, müssen folgende Dinge beachtet werden:
