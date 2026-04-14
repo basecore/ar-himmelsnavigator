@@ -1931,13 +1931,8 @@ setInterval(() => {
                 }
             }
             
-            updateCelestialInViewport();
-            updateStarsDisplay();
             updateRealtimeInfo(now, sunTimes, moonTimes, moonIllumination);
-            
-            if (viewConfig.showPathInFOV) {
-                drawCelestialPathInFOV();
-            }
+            scheduleSensorVisualUpdate();
         }
 
         // ===== ALLE HIMMELSKÖRPER GLEICHZEITIG ANZEIGEN MIT KLEINEREN GRÖSSEN =====
@@ -2279,12 +2274,42 @@ setInterval(() => {
         }
 
         // ===== SENSOR-UPDATES MIT GIMBAL LOCK PROTECTION =====
-let orientationSensor = null;
 
         function resetSmoothingBuffers() {
             smoothingBuffers.azimuth = [];
             smoothingBuffers.pitch = [];
             smoothingBuffers.roll = [];
+        }
+
+
+        let orientationSensor = null;
+        let sensorFramePending = false;
+        let lastStarsFrameTs = 0;
+        let lastPathFrameTs = 0;
+        
+        function scheduleSensorVisualUpdate() {
+            if (sensorFramePending) return;
+            sensorFramePending = true;
+        
+            requestAnimationFrame((ts) => {
+                sensorFramePending = false;
+        
+                updateHorizonLine();
+                updateCompassRose();
+                update3DDirectionArrow();
+                updateCelestialInViewport();
+                updateSensorMini();
+        
+                if (ts - lastStarsFrameTs >= 50) {
+                    updateStarsDisplay();
+                    lastStarsFrameTs = ts;
+                }
+        
+                if (viewConfig.showPathInFOV && ts - lastPathFrameTs >= 100) {
+                    drawCelestialPathInFOV();
+                    lastPathFrameTs = ts;
+                }
+            });
         }
 
         function startSensorUpdates() {
@@ -2415,21 +2440,12 @@ let orientationSensor = null;
             deviceOrientation.azimuth = (getCircularMean(smoothingBuffers.azimuth) + calibrationOffset + 360) % 360;
             deviceOrientation.pitch = smoothingBuffers.pitch.reduce((a, b) => a + b, 0) / smoothingBuffers.pitch.length;
             deviceOrientation.roll = smoothingBuffers.roll.reduce((a, b) => a + b, 0) / smoothingBuffers.roll.length;
-
-            updateHorizonLine();
-            updateCompassRose();
-            update3DDirectionArrow();
-            updateCelestialInViewport();
-            updateStarsDisplay();
-            updateSensorMini();
-
-            if (viewConfig.showPathInFOV) {
-                drawCelestialPathInFOV();
-            }
-
+            
+            scheduleSensorVisualUpdate();
+            
             if (debugMode) {
-                updateDebugDisplay(rawEvent || {}, { 
-                    rawAlpha: rawAzimuth, 
+                updateDebugDisplay(rawEvent, {
+                    rawAlpha: rawAzimuth,
                     rawBeta: rawPitch + 90,
                     correctedPitch: rawPitch,
                     compassHeading: currentHeading,
