@@ -1281,15 +1281,13 @@ setInterval(() => {
         }
 
         function updateStarsDisplay() {
+            const canvas = dom.starsCanvas;
+            const ctx = dom.starsCtx;
+
             if (!starsConfig.showStars || !userLocation.lat || !userLocation.lon) {
-                const canvas = document.getElementById('stars-overlay');
-                const ctx = canvas.getContext('2d');
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
                 return;
             }
-            
-            const canvas = document.getElementById('stars-overlay');
-            const ctx = canvas.getContext('2d');
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
             const now = new Date();
@@ -1698,6 +1696,9 @@ setInterval(() => {
                 // -----------------------------------------
 
                 await requestSensorPermissions();
+            cacheDomElements();
+            initCompassRose();
+            updateViewport();
             initializeLocation();
             setupEventListeners();
             setupPanels();
@@ -1811,8 +1812,8 @@ setInterval(() => {
 
         // ===== ALLE HIMMELSKÖRPER GLEICHZEITIG ANZEIGEN MIT KLEINEREN GRÖSSEN =====
         function updateCelestialInViewport() {
-            const canvas = document.getElementById('ar-overlay');
-            const ctx = canvas.getContext('2d');
+            const canvas = dom.arCanvas;
+            const ctx = dom.arCtx;
             
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
@@ -1984,26 +1985,25 @@ setInterval(() => {
 
         // ===== ECHTZEIT-SENSOR-UPDATES UND "IM SICHTFELD" =====
         function updateSensorMini() {
-            document.getElementById('sensor-compass').textContent = deviceOrientation.azimuth.toFixed(1) + '°';
-            document.getElementById('sensor-pitch').textContent = deviceOrientation.pitch.toFixed(1) + '°';
-            document.getElementById('sensor-roll').textContent = deviceOrientation.roll.toFixed(1) + '°';
-            
             const celestialPos = getCurrentCelestialPosition();
             const azimuthDiff = getShortestAngle(deviceOrientation.azimuth, celestialPos.azimuth);
             const pitchDiff = celestialPos.altitude - deviceOrientation.pitch;
-            
-            document.getElementById('sensor-azimuth-diff').textContent = azimuthDiff.toFixed(1) + '°';
-            document.getElementById('sensor-pitch-diff').textContent = pitchDiff.toFixed(1) + '°';
-            
             const totalDiff = Math.sqrt(azimuthDiff * azimuthDiff + pitchDiff * pitchDiff);
             const accuracy = Math.max(0, 100 - (totalDiff / 180 * 100));
-            document.getElementById('sensor-accuracy').textContent = accuracy.toFixed(0) + '%';
-            
             const celestialInView = isInFieldOfView(celestialPos.azimuth, celestialPos.altitude);
-            const inViewElement = document.getElementById('celestial-in-view');
-            if (inViewElement) {
-                inViewElement.textContent = celestialInView ? 'JA' : 'NEIN';
-                inViewElement.style.color = celestialInView ? '#4CAF50' : '#f44336';
+
+            setTextIfChanged(dom.sensorCompass, 'compass', deviceOrientation.azimuth.toFixed(1) + '°');
+            setTextIfChanged(dom.sensorPitch, 'pitch', deviceOrientation.pitch.toFixed(1) + '°');
+            setTextIfChanged(dom.sensorRoll, 'roll', deviceOrientation.roll.toFixed(1) + '°');
+            setTextIfChanged(dom.sensorAzimuthDiff, 'azimuthDiff', azimuthDiff.toFixed(1) + '°');
+            setTextIfChanged(dom.sensorPitchDiff, 'pitchDiff', pitchDiff.toFixed(1) + '°');
+            setTextIfChanged(dom.sensorAccuracy, 'accuracy', accuracy.toFixed(0) + '%');
+
+            const inViewText = celestialInView ? 'JA' : 'NEIN';
+            if (sensorTextCache.inView !== inViewText && dom.celestialInView) {
+                sensorTextCache.inView = inViewText;
+                dom.celestialInView.textContent = inViewText;
+                dom.celestialInView.style.color = celestialInView ? '#4CAF50' : '#f44336';
             }
         }
 
@@ -2164,21 +2164,23 @@ setInterval(() => {
         function scheduleSensorVisualUpdate() {
             if (sensorFramePending) return;
             sensorFramePending = true;
-        
+
             requestAnimationFrame((ts) => {
                 sensorFramePending = false;
-        
+
+                if (!shouldRedrawScene()) return;
+
                 updateHorizonLine();
                 updateCompassRose();
                 update3DDirectionArrow();
                 updateCelestialInViewport();
                 updateSensorMini();
-        
+
                 if (ts - lastStarsFrameTs >= 50) {
                     updateStarsDisplay();
                     lastStarsFrameTs = ts;
                 }
-        
+
                 if (viewConfig.showPathInFOV && ts - lastPathFrameTs >= 100) {
                     drawCelestialPathInFOV();
                     lastPathFrameTs = ts;
@@ -2343,21 +2345,18 @@ setInterval(() => {
 
         // ===== RESTLICHE FUNKTIONEN (HORIZONT, PFEIL, KAMERA, ETC.) =====
         function updateHorizonLine() {
-            if (!viewConfig.showHorizon) return;
-            
-            const horizonLine = document.getElementById('horizon-line');
-            const screenHeight = window.innerHeight;
-            
+            if (!viewConfig.showHorizon || !dom.horizonLine) return;
+
             const pitchRadians = (deviceOrientation.pitch * Math.PI) / 180;
-            const horizonOffset = Math.tan(pitchRadians) * (screenHeight / 2) * compassConfig.pitchSensitivity;
-            const horizonY = (screenHeight / 2) + horizonOffset;
-            
-            horizonLine.style.top = `${Math.max(0, Math.min(screenHeight, horizonY))}px`;
+            const horizonOffset = Math.tan(pitchRadians) * (viewport.height / 2) * compassConfig.pitchSensitivity;
+            const horizonY = (viewport.height / 2) + horizonOffset;
+
+            dom.horizonLine.style.top = `${Math.max(0, Math.min(viewport.height, horizonY))}px`;
         }
 
         function update3DDirectionArrow() {
-            const canvas = document.getElementById('direction-arrow');
-            const ctx = canvas.getContext('2d');
+            const canvas = dom.directionCanvas;
+            const ctx = dom.directionCtx;
 
             canvas.style.opacity = '1';
             ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -2725,17 +2724,10 @@ setInterval(() => {
         }
 
         function updateCompassRose() {
-            const compassRose = document.getElementById('compass-rose');
-            let html = '';
-
-            compassDirections.forEach(dir => {
-                const diff = Math.abs(getShortestAngle(deviceOrientation.azimuth, dir.azimuth));
-                const isActive = diff < 22.5;
-
-                html += `<div class="compass-point ${isActive ? 'active' : ''}">${dir.name}</div>`;
-            });
-
-            compassRose.innerHTML = html;
+            for (const item of compassPointElements) {
+                const diff = Math.abs(getShortestAngle(deviceOrientation.azimuth, item.dir.azimuth));
+                item.el.classList.toggle('active', diff < 22.5);
+            }
         }
 
         function updateDebugDisplay(event, values) {
@@ -2812,15 +2804,11 @@ setInterval(() => {
         }
 
         function resizeCanvas() {
-            const canvas = document.getElementById('ar-overlay');
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
+            updateViewport();
         }
 
         function resizeStarsCanvas() {
-            const canvas = document.getElementById('stars-overlay');
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
+            updateViewport();
         }
 
         function calculateClipperPositionAdvanced(date, lat, lon) {
