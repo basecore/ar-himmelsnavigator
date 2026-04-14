@@ -2139,22 +2139,25 @@ let orientationSensor = null;
         }
 
         function startSensorUpdates() {
+            const isFirefox = /firefox|fennec/i.test(navigator.userAgent);
+        
             if (orientationSensor) {
-                orientationSensor.stop();
+                try {
+                    orientationSensor.stop();
+                } catch (e) {}
                 orientationSensor = null;
             }
+        
             window.removeEventListener('deviceorientationabsolute', handleDeviceOrientationLegacy, true);
             window.removeEventListener('deviceorientation', handleDeviceOrientationLegacy, true);
-
-            if (compassConfig.useAdvancedSensor && 'AbsoluteOrientationSensor' in window) {
+        
+            if (!isFirefox && compassConfig.useAdvancedSensor && 'AbsoluteOrientationSensor' in window) {
                 try {
                     orientationSensor = new AbsoluteOrientationSensor({ frequency: 60, referenceFrame: 'device' });
                     orientationSensor.addEventListener('reading', handleAdvancedSensorReading);
                     orientationSensor.addEventListener('error', (event) => {
                         console.warn("Sensor error:", event.error);
-                        if (event.error.name === 'NotAllowedError' || event.error.name === 'NotReadableError') {
-                            fallbackToLegacySensor();
-                        }
+                        fallbackToLegacySensor();
                     });
                     orientationSensor.start();
                     console.log("AbsoluteOrientationSensor gestartet.");
@@ -2163,17 +2166,19 @@ let orientationSensor = null;
                     console.warn("Konnte AbsoluteOrientationSensor nicht starten:", error);
                 }
             }
+        
             fallbackToLegacySensor();
         }
 
         function fallbackToLegacySensor() {
             if (orientationSensor) {
                 try {
-                    orientationSensor.removeEventListener('reading', handleAdvancedSensorReading);
                     orientationSensor.stop();
                 } catch (e) {}
                 orientationSensor = null;
             }
+        
+            resetSmoothingBuffers();
         
             window.removeEventListener('deviceorientationabsolute', handleDeviceOrientationLegacy, true);
             window.removeEventListener('deviceorientation', handleDeviceOrientationLegacy, true);
