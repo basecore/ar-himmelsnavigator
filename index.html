@@ -2331,8 +2331,7 @@ setInterval(() => {
                 `ROLL=${sensorDebugState.lastRoll ?? '-'}`,
                 `ERRORS=${(sensorDebugState.errors || []).join(' || ') || '-'}`,
                 '---'
-            ].join('
-');
+            ].join('\\n');
         }
 
         function appendSensorSnapshot(reason = 'AUTO') {
@@ -2341,8 +2340,7 @@ setInterval(() => {
             sensorDebugState.snapshots = sensorDebugState.snapshots.slice(-40);
             const ta = document.getElementById('sensor-debug-log');
             if (ta) {
-                ta.value = sensorDebugState.snapshots.join('
-');
+                ta.value = sensorDebugState.snapshots.join('\\n');
                 ta.scrollTop = ta.scrollHeight;
             }
             return snapshot;
