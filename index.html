@@ -987,6 +987,135 @@
             pitch: [],
             roll: []
         };
+
+
+        const dom = {
+            arCanvas: null,
+            arCtx: null,
+            starsCanvas: null,
+            starsCtx: null,
+            directionCanvas: null,
+            directionCtx: null,
+            compassRose: null,
+            horizonLine: null,
+            sensorCompass: null,
+            sensorPitch: null,
+            sensorRoll: null,
+            sensorAzimuthDiff: null,
+            sensorPitchDiff: null,
+            sensorAccuracy: null,
+            celestialInView: null
+        };
+
+        const viewport = {
+            width: 0,
+            height: 0,
+            halfWidth: 0,
+            halfHeight: 0
+        };
+
+        let compassPointElements = [];
+
+        const sensorTextCache = {
+            compass: '',
+            pitch: '',
+            roll: '',
+            azimuthDiff: '',
+            pitchDiff: '',
+            accuracy: '',
+            inView: ''
+        };
+
+        let lastRenderState = {
+            azimuth: null,
+            pitch: null,
+            roll: null,
+            body: null
+        };
+
+        function cacheDomElements() {
+            dom.arCanvas = document.getElementById('ar-overlay');
+            dom.arCtx = dom.arCanvas.getContext('2d');
+
+            dom.starsCanvas = document.getElementById('stars-overlay');
+            dom.starsCtx = dom.starsCanvas.getContext('2d');
+
+            dom.directionCanvas = document.getElementById('direction-arrow');
+            dom.directionCtx = dom.directionCanvas.getContext('2d');
+
+            dom.compassRose = document.getElementById('compass-rose');
+            dom.horizonLine = document.getElementById('horizon-line');
+
+            dom.sensorCompass = document.getElementById('sensor-compass');
+            dom.sensorPitch = document.getElementById('sensor-pitch');
+            dom.sensorRoll = document.getElementById('sensor-roll');
+            dom.sensorAzimuthDiff = document.getElementById('sensor-azimuth-diff');
+            dom.sensorPitchDiff = document.getElementById('sensor-pitch-diff');
+            dom.sensorAccuracy = document.getElementById('sensor-accuracy');
+            dom.celestialInView = document.getElementById('celestial-in-view');
+        }
+
+        function updateViewport() {
+            viewport.width = window.innerWidth;
+            viewport.height = window.innerHeight;
+            viewport.halfWidth = viewport.width / 2;
+            viewport.halfHeight = viewport.height / 2;
+
+            if (dom.arCanvas) {
+                dom.arCanvas.width = viewport.width;
+                dom.arCanvas.height = viewport.height;
+            }
+
+            if (dom.starsCanvas) {
+                dom.starsCanvas.width = viewport.width;
+                dom.starsCanvas.height = viewport.height;
+            }
+        }
+
+        function initCompassRose() {
+            if (!dom.compassRose) return;
+            dom.compassRose.innerHTML = '';
+            compassPointElements = compassDirections.map(dir => {
+                const el = document.createElement('div');
+                el.className = 'compass-point';
+                el.textContent = dir.name;
+                dom.compassRose.appendChild(el);
+                return { dir, el };
+            });
+        }
+
+        function setTextIfChanged(element, key, value) {
+            if (!element) return;
+            if (sensorTextCache[key] !== value) {
+                sensorTextCache[key] = value;
+                element.textContent = value;
+            }
+        }
+
+        function shouldRedrawScene() {
+            const azimuthChanged = lastRenderState.azimuth === null ||
+                Math.abs(getShortestAngle(lastRenderState.azimuth, deviceOrientation.azimuth)) > 0.2;
+
+            const pitchChanged = lastRenderState.pitch === null ||
+                Math.abs(lastRenderState.pitch - deviceOrientation.pitch) > 0.2;
+
+            const rollChanged = lastRenderState.roll === null ||
+                Math.abs(lastRenderState.roll - deviceOrientation.roll) > 0.3;
+
+            const bodyChanged = lastRenderState.body !== currentCelestialBody;
+
+            if (!(azimuthChanged || pitchChanged || rollChanged || bodyChanged)) {
+                return false;
+            }
+
+            lastRenderState.azimuth = deviceOrientation.azimuth;
+            lastRenderState.pitch = deviceOrientation.pitch;
+            lastRenderState.roll = deviceOrientation.roll;
+            lastRenderState.body = currentCelestialBody;
+
+            return true;
+        }
+
         
         // Himmelsrichtungen
         const compassDirections = [
