@@ -550,6 +550,155 @@
             z-index: 1.5;
             pointer-events: none;
         }
+    
+
+        /* ===== DEBUG TOOLKIT ===== */
+        #full-debug-panel {
+            position: fixed;
+            left: 12px;
+            right: 12px;
+            bottom: 80px;
+            z-index: 5000;
+            background: rgba(0, 0, 0, 0.94);
+            border: 1px solid rgba(0, 243, 255, 0.45);
+            border-radius: 14px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+            color: #dffcff;
+            backdrop-filter: blur(8px);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            max-height: min(56vh, 560px);
+            overflow: hidden;
+        }
+        #full-debug-panel.minimized .full-debug-body { display: none; }
+        #full-debug-panel.minimized { max-height: 56px; }
+        .full-debug-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            border-bottom: 1px solid rgba(0, 243, 255, 0.22);
+            background: rgba(0, 243, 255, 0.08);
+        }
+        .full-debug-title {
+            font-weight: 700;
+            color: #00f3ff;
+            font-size: 12px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+        .full-debug-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            justify-content: flex-end;
+        }
+        .full-debug-btn {
+            background: rgba(255,255,255,0.08);
+            color: #fff;
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 8px;
+            padding: 7px 9px;
+            font-size: 11px;
+            line-height: 1;
+            cursor: pointer;
+        }
+        .full-debug-btn.primary { border-color: rgba(0,243,255,0.45); color: #00f3ff; }
+        .full-debug-btn.warn { border-color: rgba(255,180,0,0.45); color: #ffb400; }
+        .full-debug-btn.danger { border-color: rgba(255,88,88,0.5); color: #ff7b7b; }
+        .full-debug-body {
+            display: grid;
+            grid-template-columns: 1.2fr 1fr;
+            gap: 10px;
+            padding: 10px;
+        }
+        .full-debug-col {
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .debug-box {
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 10px;
+            padding: 10px;
+            background: rgba(255,255,255,0.03);
+        }
+        .debug-box h4 {
+            color: #00f3ff;
+            font-size: 12px;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+        .debug-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 6px 10px;
+        }
+        .debug-line {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            font-size: 12px;
+        }
+        .debug-line span:first-child { color: #8dbcc0; }
+        .debug-line span:last-child {
+            color: #fff;
+            text-align: right;
+            overflow-wrap: anywhere;
+        }
+        .debug-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+        .debug-badge {
+            padding: 4px 7px;
+            border-radius: 999px;
+            font-size: 11px;
+            border: 1px solid rgba(255,255,255,0.14);
+            background: rgba(255,255,255,0.06);
+            color: #fff;
+        }
+        .debug-badge.ok { color: #72f0a1; border-color: rgba(114,240,161,0.35); }
+        .debug-badge.warn { color: #ffcf66; border-color: rgba(255,207,102,0.35); }
+        .debug-badge.bad { color: #ff8e8e; border-color: rgba(255,142,142,0.35); }
+        #debug-command-input, #debug-log-output {
+            width: 100%;
+            background: rgba(0,0,0,0.45);
+            color: #dffcff;
+            border: 1px solid rgba(0,243,255,0.18);
+            border-radius: 8px;
+            padding: 9px;
+            font-family: inherit;
+            font-size: 12px;
+        }
+        #debug-log-output {
+            min-height: 180px;
+            resize: vertical;
+            white-space: pre-wrap;
+        }
+        .debug-command-row {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .debug-help {
+            color: #9dd5da;
+            font-size: 11px;
+            line-height: 1.45;
+            margin-top: 6px;
+        }
+        @media (max-width: 900px) {
+            #full-debug-panel {
+                left: 8px;
+                right: 8px;
+                bottom: 74px;
+                max-height: 62vh;
+            }
+            .full-debug-body {
+                grid-template-columns: 1fr;
+            }
+            .debug-grid { grid-template-columns: 1fr; }
+        }
+
     </style>
 </head>
 <body>
@@ -3075,5 +3224,540 @@ let orientationSensor = null;
             });
         }
         </script>
+
+
+    <div id="full-debug-panel" class="minimized">
+        <div class="full-debug-header">
+            <div class="full-debug-title">Debug Toolkit</div>
+            <div class="full-debug-actions">
+                <button class="full-debug-btn primary" type="button" onclick="window.DEBUG_TOOLS && window.DEBUG_TOOLS.toggle()">Öffnen</button>
+                <button class="full-debug-btn" type="button" onclick="window.DEBUG_TOOLS && window.DEBUG_TOOLS.copyLog()">Copy</button>
+                <button class="full-debug-btn" type="button" onclick="window.DEBUG_TOOLS && window.DEBUG_TOOLS.exportState()">JSON</button>
+                <button class="full-debug-btn warn" type="button" onclick="window.DEBUG_TOOLS && window.DEBUG_TOOLS.restartSensors()">Restart</button>
+                <button class="full-debug-btn" type="button" onclick="window.DEBUG_TOOLS && window.DEBUG_TOOLS.setForceMode('auto')">Auto</button>
+                <button class="full-debug-btn" type="button" onclick="window.DEBUG_TOOLS && window.DEBUG_TOOLS.setForceMode('legacy')">Legacy</button>
+                <button class="full-debug-btn" type="button" onclick="window.DEBUG_TOOLS && window.DEBUG_TOOLS.setForceMode('advanced')">Advanced</button>
+                <button class="full-debug-btn danger" type="button" onclick="window.DEBUG_TOOLS && window.DEBUG_TOOLS.clearLog()">Clear</button>
+            </div>
+        </div>
+        <div class="full-debug-body">
+            <div class="full-debug-col">
+                <div class="debug-box">
+                    <h4>Status</h4>
+                    <div class="debug-badges" id="debug-status-badges"></div>
+                    <div class="debug-grid" id="debug-info-grid"></div>
+                </div>
+                <div class="debug-box">
+                    <h4>Kommandos</h4>
+                    <input id="debug-command-input" type="text" placeholder="help | dump | copy | clear | pause | resume | restart | mode auto|legacy|advanced | debug on|off | snapshot">
+                    <div class="debug-command-row">
+                        <button class="full-debug-btn primary" type="button" onclick="window.DEBUG_TOOLS && window.DEBUG_TOOLS.runCommand()">Ausführen</button>
+                        <button class="full-debug-btn" type="button" onclick="window.DEBUG_TOOLS && window.DEBUG_TOOLS.snapshot()">Snapshot</button>
+                        <button class="full-debug-btn" type="button" onclick="window.DEBUG_TOOLS && window.DEBUG_TOOLS.togglePause()">Pause/Resume</button>
+                    </div>
+                    <div class="debug-help">Dieser Debug-Modus protokolliert Sensor-Start, Moduswechsel, Legacy-/Advanced-Events, applySensorValues-Aufrufe, Rendering, Fehler und wichtige Gerätezustände.</div>
+                </div>
+            </div>
+            <div class="full-debug-col">
+                <div class="debug-box">
+                    <h4>Log</h4>
+                    <textarea id="debug-log-output" spellcheck="false" readonly></textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+<script>
+(function() {
+    const DEBUG = {
+        version: 'debug-full-2026-04-14',
+        opened: false,
+        paused: false,
+        forceMode: 'auto',
+        mode: 'init',
+        maxLines: 500,
+        logLines: [],
+        counters: {
+            legacyEvents: 0,
+            advancedEvents: 0,
+            applyCalls: 0,
+            renders: 0,
+            errors: 0,
+            restartCalls: 0
+        },
+        last: {
+            advanced: null,
+            legacy: null,
+            apply: null,
+            render: null,
+            error: null,
+            permission: null,
+            orientation: null
+        },
+        startedAt: Date.now(),
+        elements: {},
+        stateTimer: null
+    };
+
+    function now() {
+        const d = new Date();
+        return d.toLocaleTimeString('de-DE', { hour12: false }) + '.' + String(d.getMilliseconds()).padStart(3, '0');
+    }
+
+    function safe(v) {
+        if (v === undefined) return 'undefined';
+        if (v === null) return 'null';
+        if (typeof v === 'number') return Number.isFinite(v) ? v.toFixed(2) : String(v);
+        if (typeof v === 'string') return v;
+        try { return JSON.stringify(v); } catch (e) { return String(v); }
+    }
+
+    function addLog(type, message, payload) {
+        const line = '[' + now() + '] ' + type + ' ' + message + (payload !== undefined ? ' | ' + safe(payload) : '');
+        DEBUG.logLines.push(line);
+        if (DEBUG.logLines.length > DEBUG.maxLines) DEBUG.logLines.splice(0, DEBUG.logLines.length - DEBUG.maxLines);
+        if (!DEBUG.paused && DEBUG.elements.log) DEBUG.elements.log.value = DEBUG.logLines.join('\n');
+        if (!DEBUG.paused && DEBUG.elements.log) DEBUG.elements.log.scrollTop = DEBUG.elements.log.scrollHeight;
+    }
+
+    function getGlobal(name, fallback) {
+        try {
+            return typeof window[name] !== 'undefined' ? window[name] : fallback;
+        } catch (e) {
+            return fallback;
+        }
+    }
+
+    function formatOrientation(o) {
+        if (!o) return '-';
+        return 'az=' + safe(o.azimuth) + ' pitch=' + safe(o.pitch) + ' roll=' + safe(o.roll);
+    }
+
+    function updateUi() {
+        const badges = DEBUG.elements.badges;
+        const grid = DEBUG.elements.grid;
+        if (!badges || !grid) return;
+
+        const orientation = getGlobal('deviceOrientation', null);
+        const compassConfig = getGlobal('compassConfig', {});
+        const location = getGlobal('userLocation', {});
+        const sensor = getGlobal('orientationSensor', null);
+        const debugMode = getGlobal('debugMode', false);
+        const absoluteSupported = 'AbsoluteOrientationSensor' in window;
+        const modeBadge = DEBUG.forceMode === 'auto' ? DEBUG.mode : (DEBUG.mode + ' / forced=' + DEBUG.forceMode);
+
+        badges.innerHTML = [
+            badge('mode: ' + modeBadge, DEBUG.mode === 'advanced' ? 'ok' : DEBUG.mode === 'legacy' ? 'warn' : ''),
+            badge('AOS ' + (absoluteSupported ? 'yes' : 'no'), absoluteSupported ? 'ok' : 'bad'),
+            badge('devori ' + (('ondeviceorientation' in window) ? 'yes' : 'no'), ('ondeviceorientation' in window) ? 'ok' : 'bad'),
+            badge('abs ' + (('ondeviceorientationabsolute' in window) ? 'yes' : 'no'), ('ondeviceorientationabsolute' in window) ? 'ok' : 'warn'),
+            badge('paused ' + (DEBUG.paused ? 'yes' : 'no'), DEBUG.paused ? 'warn' : 'ok'),
+            badge('debug ' + (debugMode ? 'on' : 'off'), debugMode ? 'ok' : '')
+        ].join('');
+
+        const rows = [
+            ['Version', DEBUG.version],
+            ['User-Agent', navigator.userAgent],
+            ['Platform', navigator.platform || '-'],
+            ['Screen', window.innerWidth + 'x' + window.innerHeight + ' / DPR ' + safe(window.devicePixelRatio)],
+            ['Secure Context', safe(window.isSecureContext)],
+            ['Permission API', typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function' ? 'requestPermission()' : 'standard'],
+            ['Current Mode', DEBUG.mode],
+            ['Force Mode', DEBUG.forceMode],
+            ['Advanced Enabled', safe(compassConfig.useAdvancedSensor)],
+            ['Sensor Object', sensor ? 'present' : 'none'],
+            ['Events Legacy', String(DEBUG.counters.legacyEvents)],
+            ['Events Advanced', String(DEBUG.counters.advancedEvents)],
+            ['applySensorValues', String(DEBUG.counters.applyCalls)],
+            ['Render Calls', String(DEBUG.counters.renders)],
+            ['Errors', String(DEBUG.counters.errors)],
+            ['Location', 'lat=' + safe(location.lat) + ' lon=' + safe(location.lon)],
+            ['Orientation', formatOrientation(orientation)],
+            ['Last Legacy', DEBUG.last.legacy ? safe(DEBUG.last.legacy) : '-'],
+            ['Last Advanced', DEBUG.last.advanced ? safe(DEBUG.last.advanced) : '-'],
+            ['Last Apply', DEBUG.last.apply ? safe(DEBUG.last.apply) : '-'],
+            ['Last Render', DEBUG.last.render ? safe(DEBUG.last.render) : '-'],
+            ['Last Error', DEBUG.last.error ? safe(DEBUG.last.error) : '-'],
+            ['Last Permission', DEBUG.last.permission ? safe(DEBUG.last.permission) : '-']
+        ];
+
+        grid.innerHTML = rows.map(([a, b]) => '<div class="debug-line"><span>' + escapeHtml(a) + '</span><span>' + escapeHtml(String(b)) + '</span></div>').join('');
+        if (!DEBUG.paused && DEBUG.elements.log) DEBUG.elements.log.value = DEBUG.logLines.join('\n');
+    }
+
+    function badge(text, cls) {
+        return '<span class="debug-badge ' + (cls || '') + '">' + escapeHtml(text) + '</span>';
+    }
+
+    function escapeHtml(s) {
+        return String(s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function wrapFunction(name, wrapperFactory) {
+        const original = window[name];
+        if (typeof original !== 'function') {
+            addLog('MISS', name + ' not found');
+            return;
+        }
+        if (original.__debugWrapped) return;
+        const wrapped = wrapperFactory(original);
+        wrapped.__debugWrapped = true;
+        wrapped.__debugOriginal = original;
+        window[name] = wrapped;
+        addLog('HOOK', name + ' wrapped');
+    }
+
+    function setMode(mode) {
+        DEBUG.mode = mode;
+        updateUi();
+    }
+
+    function applyForceMode() {
+        try {
+            const cfg = getGlobal('compassConfig', null);
+            if (!cfg) return;
+            if (DEBUG.forceMode === 'advanced') cfg.useAdvancedSensor = true;
+            if (DEBUG.forceMode === 'legacy') cfg.useAdvancedSensor = false;
+            addLog('MODE', 'force mode applied', { forceMode: DEBUG.forceMode, useAdvancedSensor: cfg.useAdvancedSensor });
+        } catch (e) {
+            addLog('ERR', 'applyForceMode failed', e.message || String(e));
+        }
+    }
+
+    function restartSensors() {
+        DEBUG.counters.restartCalls += 1;
+        applyForceMode();
+        try {
+            if (typeof window.orientationSensor !== 'undefined' && window.orientationSensor) {
+                try {
+                    window.orientationSensor.removeEventListener('reading', window.handleAdvancedSensorReading);
+                    window.orientationSensor.stop();
+                } catch (e) {}
+                window.orientationSensor = null;
+            }
+            window.removeEventListener('deviceorientationabsolute', window.handleDeviceOrientationLegacy, true);
+            window.removeEventListener('deviceorientation', window.handleDeviceOrientationLegacy, true);
+            addLog('ACT', 'sensor listeners cleared');
+        } catch (e) {
+            addLog('ERR', 'sensor cleanup failed', e.message || String(e));
+        }
+        try {
+            if (typeof window.startSensorUpdates === 'function') {
+                window.startSensorUpdates();
+                addLog('ACT', 'startSensorUpdates() called');
+            } else {
+                addLog('MISS', 'startSensorUpdates missing');
+            }
+        } catch (e) {
+            DEBUG.counters.errors += 1;
+            DEBUG.last.error = e.message || String(e);
+            addLog('ERR', 'restartSensors failed', e.stack || e.message || String(e));
+        }
+        updateUi();
+    }
+
+    function snapshot() {
+        const snap = {
+            time: new Date().toISOString(),
+            mode: DEBUG.mode,
+            forceMode: DEBUG.forceMode,
+            counters: DEBUG.counters,
+            last: DEBUG.last,
+            orientation: getGlobal('deviceOrientation', null),
+            compassConfig: getGlobal('compassConfig', null),
+            userLocation: getGlobal('userLocation', null),
+            currentCelestialBody: getGlobal('currentCelestialBody', null),
+            screen: { width: window.innerWidth, height: window.innerHeight, dpr: window.devicePixelRatio },
+            ua: navigator.userAgent
+        };
+        addLog('SNAP', 'state snapshot', snap);
+        updateUi();
+        return snap;
+    }
+
+    function exportState() {
+        const blob = new Blob([JSON.stringify({ snapshot: snapshot(), log: DEBUG.logLines }, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'sensor-debug-state.json';
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }
+
+    function copyLog() {
+        const text = DEBUG.logLines.join('\n');
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(() => addLog('ACT', 'log copied to clipboard')).catch(() => fallbackCopy(text));
+        } else {
+            fallbackCopy(text);
+        }
+    }
+
+    function fallbackCopy(text) {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); addLog('ACT', 'log copied by fallback'); } catch (e) { addLog('ERR', 'copy failed', e.message || String(e)); }
+        ta.remove();
+    }
+
+    function clearLog() {
+        DEBUG.logLines = [];
+        addLog('ACT', 'log cleared');
+        updateUi();
+    }
+
+    function togglePause() {
+        DEBUG.paused = !DEBUG.paused;
+        addLog('ACT', DEBUG.paused ? 'log paused' : 'log resumed');
+        updateUi();
+    }
+
+    function toggle() {
+        const panel = DEBUG.elements.panel;
+        if (!panel) return;
+        DEBUG.opened = !panel.classList.contains('minimized');
+        panel.classList.toggle('minimized');
+        updateUi();
+    }
+
+    function setForceMode(mode) {
+        DEBUG.forceMode = mode;
+        addLog('MODE', 'force mode set', mode);
+        applyForceMode();
+        updateUi();
+    }
+
+    function setDebugFlag(flag) {
+        if (typeof window.debugMode !== 'undefined') {
+            window.debugMode = flag;
+            const checkbox = document.getElementById('debug-mode');
+            if (checkbox) checkbox.checked = flag;
+            addLog('ACT', 'debugMode set', flag);
+            if (typeof window.updateDebugDisplay === 'function') {
+                try { window.updateDebugDisplay(); } catch (e) {}
+            }
+        } else {
+            addLog('MISS', 'global debugMode not found');
+        }
+        updateUi();
+    }
+
+    function runCommand(input) {
+        const raw = (input || (DEBUG.elements.command ? DEBUG.elements.command.value : '') || '').trim();
+        if (!raw) return;
+        const parts = raw.split(/\s+/);
+        const cmd = parts[0].toLowerCase();
+        const arg = parts[1] ? parts[1].toLowerCase() : '';
+        addLog('CMD', raw);
+
+        if (cmd === 'help') {
+            addLog('HELP', 'commands', 'help | dump | copy | clear | pause | resume | restart | mode auto|legacy|advanced | debug on|off | snapshot');
+        } else if (cmd === 'dump' || cmd === 'snapshot') {
+            snapshot();
+        } else if (cmd === 'copy') {
+            copyLog();
+        } else if (cmd === 'clear') {
+            clearLog();
+        } else if (cmd === 'pause') {
+            DEBUG.paused = true; addLog('ACT', 'log paused');
+        } else if (cmd === 'resume') {
+            DEBUG.paused = false; addLog('ACT', 'log resumed');
+        } else if (cmd === 'restart') {
+            restartSensors();
+        } else if (cmd === 'mode' && ['auto', 'legacy', 'advanced'].includes(arg)) {
+            setForceMode(arg);
+            restartSensors();
+        } else if (cmd === 'debug' && ['on', 'off'].includes(arg)) {
+            setDebugFlag(arg === 'on');
+        } else {
+            addLog('HELP', 'unknown command', raw);
+        }
+
+        if (DEBUG.elements.command) DEBUG.elements.command.value = '';
+        updateUi();
+    }
+
+    function boot() {
+        DEBUG.elements.panel = document.getElementById('full-debug-panel');
+        DEBUG.elements.badges = document.getElementById('debug-status-badges');
+        DEBUG.elements.grid = document.getElementById('debug-info-grid');
+        DEBUG.elements.log = document.getElementById('debug-log-output');
+        DEBUG.elements.command = document.getElementById('debug-command-input');
+
+        if (DEBUG.elements.command) {
+            DEBUG.elements.command.addEventListener('keydown', function(ev) {
+                if (ev.key === 'Enter') {
+                    ev.preventDefault();
+                    runCommand();
+                }
+            });
+        }
+
+        const originalLog = console.log.bind(console);
+        const originalWarn = console.warn.bind(console);
+        const originalError = console.error.bind(console);
+        console.log = function(...args) { addLog('LOG', args.map(safe).join(' ')); originalLog(...args); };
+        console.warn = function(...args) { addLog('WARN', args.map(safe).join(' ')); originalWarn(...args); };
+        console.error = function(...args) { DEBUG.counters.errors += 1; DEBUG.last.error = args.map(safe).join(' '); addLog('ERR', DEBUG.last.error); originalError(...args); };
+
+        window.addEventListener('error', function(ev) {
+            DEBUG.counters.errors += 1;
+            DEBUG.last.error = (ev.message || 'window error') + ' @ ' + (ev.filename || '-') + ':' + (ev.lineno || '-') + ':' + (ev.colno || '-');
+            addLog('ERR', 'window', DEBUG.last.error);
+            updateUi();
+        });
+
+        window.addEventListener('unhandledrejection', function(ev) {
+            DEBUG.counters.errors += 1;
+            DEBUG.last.error = safe(ev.reason);
+            addLog('ERR', 'promise', DEBUG.last.error);
+            updateUi();
+        });
+
+        wrapFunction('startSensorUpdates', function(original) {
+            return function(...args) {
+                applyForceMode();
+                addLog('CALL', 'startSensorUpdates', { forceMode: DEBUG.forceMode, args });
+                const result = original.apply(this, args);
+                updateUi();
+                return result;
+            };
+        });
+
+        wrapFunction('fallbackToLegacySensor', function(original) {
+            return function(...args) {
+                setMode('legacy');
+                addLog('CALL', 'fallbackToLegacySensor');
+                return original.apply(this, args);
+            };
+        });
+
+        wrapFunction('handleAdvancedSensorReading', function(original) {
+            return function(...args) {
+                DEBUG.counters.advancedEvents += 1;
+                setMode('advanced');
+                try {
+                    const q = window.orientationSensor && window.orientationSensor.quaternion ? Array.from(window.orientationSensor.quaternion).map(n => Number(n).toFixed(4)) : null;
+                    DEBUG.last.advanced = { quaternion: q, count: DEBUG.counters.advancedEvents };
+                } catch (e) {
+                    DEBUG.last.advanced = { count: DEBUG.counters.advancedEvents };
+                }
+                if (DEBUG.counters.advancedEvents <= 10 || DEBUG.counters.advancedEvents % 25 === 0) addLog('ADV', 'reading', DEBUG.last.advanced);
+                const result = original.apply(this, args);
+                updateUi();
+                return result;
+            };
+        });
+
+        wrapFunction('handleDeviceOrientationLegacy', function(original) {
+            return function(event, ...rest) {
+                DEBUG.counters.legacyEvents += 1;
+                setMode('legacy');
+                DEBUG.last.legacy = {
+                    alpha: event && event.alpha,
+                    beta: event && event.beta,
+                    gamma: event && event.gamma,
+                    absolute: event && event.absolute,
+                    webkitCompassHeading: event && event.webkitCompassHeading,
+                    count: DEBUG.counters.legacyEvents
+                };
+                if (DEBUG.counters.legacyEvents <= 10 || DEBUG.counters.legacyEvents % 25 === 0) addLog('LEG', 'event', DEBUG.last.legacy);
+                const result = original.call(this, event, ...rest);
+                updateUi();
+                return result;
+            };
+        });
+
+        wrapFunction('applySensorValues', function(original) {
+            return function(rawHeading, rawPitch, gamma, isAdvanced, event, ...rest) {
+                DEBUG.counters.applyCalls += 1;
+                DEBUG.last.apply = { rawHeading, rawPitch, gamma, isAdvanced, eventAbsolute: event && event.absolute };
+                if (DEBUG.counters.applyCalls <= 10 || DEBUG.counters.applyCalls % 25 === 0) addLog('APPLY', 'applySensorValues', DEBUG.last.apply);
+                const result = original.call(this, rawHeading, rawPitch, gamma, isAdvanced, event, ...rest);
+                try { DEBUG.last.orientation = getGlobal('deviceOrientation', null); } catch (e) {}
+                updateUi();
+                return result;
+            };
+        });
+
+        if (typeof window.renderAR === 'function') {
+            wrapFunction('renderAR', function(original) {
+                return function(...args) {
+                    DEBUG.counters.renders += 1;
+                    DEBUG.last.render = { count: DEBUG.counters.renders, t: performance.now().toFixed(1) };
+                    return original.apply(this, args);
+                };
+            });
+        } else if (typeof window.drawAR === 'function') {
+            wrapFunction('drawAR', function(original) {
+                return function(...args) {
+                    DEBUG.counters.renders += 1;
+                    DEBUG.last.render = { count: DEBUG.counters.renders, t: performance.now().toFixed(1) };
+                    return original.apply(this, args);
+                };
+            });
+        }
+
+        if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+            const originalReq = DeviceOrientationEvent.requestPermission.bind(DeviceOrientationEvent);
+            DeviceOrientationEvent.requestPermission = function(...args) {
+                addLog('CALL', 'DeviceOrientationEvent.requestPermission');
+                return originalReq(...args).then(result => {
+                    DEBUG.last.permission = result;
+                    addLog('PERM', 'deviceorientation permission', result);
+                    updateUi();
+                    return result;
+                }).catch(err => {
+                    DEBUG.counters.errors += 1;
+                    DEBUG.last.permission = 'error';
+                    addLog('ERR', 'permission failed', err && err.message ? err.message : String(err));
+                    updateUi();
+                    throw err;
+                });
+            };
+        }
+
+        window.DEBUG_TOOLS = {
+            toggle,
+            copyLog,
+            clearLog,
+            togglePause,
+            setForceMode,
+            restartSensors,
+            snapshot,
+            exportState,
+            runCommand,
+            setDebugFlag,
+            state: DEBUG
+        };
+
+        addLog('BOOT', 'debug toolkit ready', {
+            userAgent: navigator.userAgent,
+            secure: window.isSecureContext,
+            aos: 'AbsoluteOrientationSensor' in window,
+            devori: 'ondeviceorientation' in window,
+            abs: 'ondeviceorientationabsolute' in window
+        });
+
+        DEBUG.stateTimer = setInterval(updateUi, 500);
+        updateUi();
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', boot);
+    } else {
+        boot();
+    }
+})();
+</script>
+
 </body>
 </html>
