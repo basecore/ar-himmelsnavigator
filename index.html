@@ -741,8 +741,8 @@
         </div>
         <div class="panel-content" style="color: #fff;">
             <p style="margin-bottom: 10px;"><strong>AR Himmelsnavigator</strong></p>
-            <p style="margin-bottom: 5px;"><strong>Version:</strong> v1.1</p>
-            <p style="margin-bottom: 5px;"><strong>Datum:</strong> 10.04.2026</p>
+            <p style="margin-bottom: 5px;"><strong>Version:</strong> v1.2</p>
+            <p style="margin-bottom: 5px;"><strong>Datum:</strong> 14.04.2026</p>
             <p style="margin-bottom: 15px;"><strong>Developed by:</strong> Sebastian Rößer</p>
 
             <p style="margin-bottom: 5px;"><a href="https://github.com/basecore/ar-himmelsnavigator" target="_blank" style="color: #00f3ff; text-decoration: none;">🔗 GitHub Repository</a></p>
@@ -1676,7 +1676,27 @@ setInterval(() => {
             document.body.appendChild(overlay);
 
             document.getElementById('start-ar-btn').addEventListener('click', async () => {
+                const btn = document.getElementById('start-ar-btn');
+                btn.innerHTML = '⚙️ Initialisierung...';
+                btn.style.opacity = '0.7';
+                btn.disabled = true;
+
                 overlay.remove();
+
+                // --- Initialisierungs-Overlay einfügen ---
+                const initMsg = document.createElement('div');
+                initMsg.id = 'init-message-overlay';
+                initMsg.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.8);color:white;padding:20px 30px;border-radius:15px;font-size:18px;text-align:center;z-index:10000;box-shadow:0 4px 15px rgba(0,0,0,0.5);transition:opacity 0.5s ease;';
+                initMsg.innerHTML = '<strong>Initialisierung</strong><br><span style="font-size:14px;opacity:0.8;margin-top:10px;display:block;">Standorte werden berechnet... Bitte warten (ca. 3-5 Sek)</span>';
+                document.body.appendChild(initMsg);
+
+                // Entferne das Overlay nach 4 Sekunden
+                setTimeout(() => {
+                    initMsg.style.opacity = '0';
+                    setTimeout(() => initMsg.remove(), 500);
+                }, 4000);
+                // -----------------------------------------
+
                 await requestSensorPermissions();
             initializeLocation();
             setupEventListeners();
