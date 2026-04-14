@@ -2374,8 +2374,7 @@ setInterval(() => {
                 ...(sensorDebugState.errors.length ? sensorDebugState.errors : ['-'])
             ];
 
-            el.textContent = lines.join('
-');
+            el.textContent = lines.join('\\n');
         }
 
         window.addEventListener('error', (event) => {
