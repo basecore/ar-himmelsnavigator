@@ -4,6 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>AR Himmelsnavigator - Vollständiges Sonnensystem</title>
+
+    <!-- PWA & Icons -->
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <meta name="theme-color" content="#0a1628">
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/suncalc/1.9.0/suncalc.min.js"></script>
     <script src="coordinates.js"></script>
     <style>
@@ -553,9 +560,38 @@
     
 
 
+    
+        /* PWA INSTALL BUTTON */
+        #pwa-install-btn {
+            display: none; /* hidden by default, shown by JS */
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #ffb400;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 0.9em;
+            z-index: 9999;
+            box-shadow: 0 4px 15px rgba(255, 180, 0, 0.4);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        #pwa-install-btn:hover {
+            background: #ffc533;
+            transform: translateX(-50%) scale(1.05);
+        }
+
     </style>
 </head>
 <body>
+
+    <!-- PWA Install Button -->
+    <button id="pwa-install-btn">📱 App installieren</button>
+
     <!-- Fallback-Hintergrund -->
     <div id="fallback-bg"></div>
     
@@ -848,6 +884,52 @@
     </div>
 
     <script>
+
+        // ===== PWA & SERVICE WORKER =====
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').then(reg => {
+                    console.log('ServiceWorker registriert:', reg.scope);
+                }).catch(err => {
+                    console.warn('ServiceWorker Fehler:', err);
+                });
+            });
+        }
+
+        // PWA Install Logic (Chromium/Android)
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            // Verhindert, dass Chrome den Mini-Infobar sofort anzeigt
+            e.preventDefault();
+            // Event speichern, um es später auszulösen
+            deferredPrompt = e;
+
+            // Zeige den Installations-Button
+            const installBtn = document.getElementById('pwa-install-btn');
+            if (installBtn) {
+                installBtn.style.display = 'block';
+
+                installBtn.addEventListener('click', async () => {
+                    // Button ausblenden
+                    installBtn.style.display = 'none';
+                    // Installations-Prompt anzeigen
+                    deferredPrompt.prompt();
+                    // Warten auf die Antwort des Nutzers
+                    const { outcome } = await deferredPrompt.userChoice;
+                    console.log(`User installation choice: ${outcome}`);
+                    // Prompt kann nur einmal verwendet werden
+                    deferredPrompt = null;
+                });
+            }
+        });
+
+        // Erfolgreiche Installation erkennen
+        window.addEventListener('appinstalled', (evt) => {
+            console.log('App wurde erfolgreich installiert');
+            const installBtn = document.getElementById('pwa-install-btn');
+            if (installBtn) installBtn.style.display = 'none';
+        });
+
 
         // ===== DATEN LOKAL (aus coordinates.js) =====
         let clipperCoordinates = [];
