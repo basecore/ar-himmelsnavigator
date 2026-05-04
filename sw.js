@@ -1,13 +1,14 @@
 // AR-Himmelsnavigator Service Worker
-const CACHE_NAME = 'himmelsnavigator-v1';
+const CACHE_NAME = 'himmelsnavigator-v2';
 const ASSETS_TO_CACHE = [
-  '/',
-  '/index.html',
-  '/coordinates.js',
-  '/manifest.json',
-  '/icon-192.png',
-  '/icon-512.png'
+  './',
+  './index.html',
+  './coordinates.js',
+  './manifest.json',
+  './icon-192.png',
+  './icon-512.png'
 ];
+
 
 // Install: cache core assets
 self.addEventListener('install', event => {
