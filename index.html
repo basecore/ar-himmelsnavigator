@@ -925,11 +925,9 @@
         // ===== PWA INSTALL LOGIC MIT DISMISS =====
         let deferredPrompt;
         window.addEventListener('beforeinstallprompt', (e) => {
-            // Verhindert Standard-Mini-Infobar
             e.preventDefault();
             deferredPrompt = e;
 
-            // Zeige Container nur, wenn er nicht in dieser Session weggeklickt wurde
             if (sessionStorage.getItem('pwaPromptDismissed') !== 'true') {
                 const installContainer = document.getElementById('pwa-install-container');
                 const installBtn = document.getElementById('pwa-install-btn');
@@ -938,7 +936,6 @@
                 if (installContainer && installBtn && dismissBtn) {
                     installContainer.style.display = 'flex';
 
-                    // Klick auf "Installieren"
                     installBtn.addEventListener('click', async () => {
                         installContainer.style.display = 'none';
                         deferredPrompt.prompt();
@@ -947,7 +944,6 @@
                         deferredPrompt = null;
                     });
 
-                    // Klick auf "Schließen (X)"
                     dismissBtn.addEventListener('click', () => {
                         installContainer.style.display = 'none';
                         sessionStorage.setItem('pwaPromptDismissed', 'true');
@@ -2436,11 +2432,14 @@ setInterval(() => {
             window.removeEventListener('deviceorientationabsolute', handleDeviceOrientationLegacy, true);
             window.removeEventListener('deviceorientation', handleDeviceOrientationLegacy, true);
 
+            // First check if advanced sensor is enabled in config
             if (compassConfig.useAdvancedSensor && 'AbsoluteOrientationSensor' in window) {
                 try {
+                    // Verwende referenceFrame 'device' statt 'screen' um Gimbal Lock Sprünge zu mildern
                     orientationSensor = new AbsoluteOrientationSensor({ frequency: 60, referenceFrame: 'device' });
 
-                    orientationSensor.addEventListener('reading', handleAdvancedSensor);
+                    // WICHTIG: Die Funktion heißt handleAdvancedSensorReading!
+                    orientationSensor.addEventListener('reading', handleAdvancedSensorReading);
                     orientationSensor.addEventListener('error', (error) => {
                         console.warn('Advanced Sensor error:', error.error.name, error.error.message);
                         if (error.error.name === 'NotReadableError' || error.error.name === 'SecurityError') {
@@ -2531,7 +2530,6 @@ setInterval(() => {
             const gammaRad = gamma * Math.PI / 180;
 
             let screenOrientation = window.orientation || 0;
-            const orient = screenOrientation * Math.PI / 180;
 
             const cX = Math.cos(alpha) * Math.cos(gammaRad) - Math.sin(alpha) * Math.sin(betaRad) * Math.sin(gammaRad);
             const cY = Math.sin(alpha) * Math.cos(gammaRad) + Math.cos(alpha) * Math.sin(betaRad) * Math.sin(gammaRad);
