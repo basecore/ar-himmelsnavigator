@@ -1,0 +1,26 @@
+{
+  "name": "AR-Himmelsnavigator",
+  "short_name": "Himmelsnavigator",
+  "description": "Augmented Reality Himmelsnavigator – Sterne, Planeten und Konstellationen in Echtzeit",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#020b1a",
+  "theme_color": "#0a1628",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["education", "navigation"],
+  "lang": "de"
+}
