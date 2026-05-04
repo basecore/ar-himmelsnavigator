@@ -1,4 +1,4 @@
-// AR-Himmelsnavigator Service Worker
+// AR-Himmelsnavigator Service Worker v2
 const CACHE_NAME = 'himmelsnavigator-v2';
 const ASSETS_TO_CACHE = [
   './',
@@ -9,8 +9,6 @@ const ASSETS_TO_CACHE = [
   './icon-512.png'
 ];
 
-
-// Install: cache core assets
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
@@ -20,7 +18,6 @@ self.addEventListener('install', event => {
   );
 });
 
-// Activate: clean up old caches
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys =>
@@ -34,17 +31,13 @@ self.addEventListener('activate', event => {
   );
 });
 
-// Fetch: network-first for coordinates.js (large, may update),
-//        cache-first for everything else
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 
-  // Skip non-GET and cross-origin requests (e.g. CDN libraries)
   if (event.request.method !== 'GET' || url.origin !== self.location.origin) {
     return;
   }
 
-  // Network-first for coordinates.js
   if (url.pathname.endsWith('coordinates.js')) {
     event.respondWith(
       fetch(event.request)
@@ -58,7 +51,6 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Cache-first for everything else
   event.respondWith(
     caches.match(event.request).then(cached => {
       if (cached) return cached;
