@@ -4,6 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>AR Himmelsnavigator - Vollständiges Sonnensystem</title>
+
+    <!-- PWA & Icons -->
+    <link rel="manifest" href="./manifest.json">
+    <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+    <link rel="apple-touch-icon" href="./icon-192.png">
+    <meta name="theme-color" content="#0a1628">
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/suncalc/1.9.0/suncalc.min.js"></script>
     <script src="coordinates.js"></script>
     <style>
@@ -553,9 +560,64 @@
     
 
 
+    
+        /* PWA INSTALLATION UI */
+        #pwa-install-container {
+            display: none;
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.85);
+            border: 1px solid #ffb400;
+            padding: 8px 12px;
+            border-radius: 20px;
+            z-index: 9999;
+            box-shadow: 0 4px 15px rgba(255, 180, 0, 0.4);
+            align-items: center;
+            gap: 10px;
+            backdrop-filter: blur(5px);
+        }
+        #pwa-install-btn {
+            background: #ffb400;
+            color: #000;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 15px;
+            font-weight: bold;
+            font-size: 0.9em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        #pwa-install-btn:hover {
+            background: #ffc533;
+            transform: scale(1.05);
+        }
+        #pwa-dismiss-btn {
+            background: none;
+            border: none;
+            color: #ddd;
+            font-size: 1.2em;
+            cursor: pointer;
+            padding: 0 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #pwa-dismiss-btn:hover {
+            color: #fff;
+        }
+
     </style>
 </head>
 <body>
+
+    <!-- PWA Install Banner -->
+    <div id="pwa-install-container">
+        <button id="pwa-install-btn">📱 App installieren</button>
+        <button id="pwa-dismiss-btn" title="Schließen">✖</button>
+    </div>
+
     <!-- Fallback-Hintergrund -->
     <div id="fallback-bg"></div>
     
@@ -848,6 +910,58 @@
     </div>
 
     <script>
+
+        // ===== PWA & SERVICE WORKER =====
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js').then(reg => {
+                    console.log('ServiceWorker registriert:', reg.scope);
+                }).catch(err => {
+                    console.warn('ServiceWorker Fehler:', err);
+                });
+            });
+        }
+
+        // ===== PWA INSTALL LOGIC MIT DISMISS =====
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            // Verhindert Standard-Mini-Infobar
+            e.preventDefault();
+            deferredPrompt = e;
+
+            // Zeige Container nur, wenn er nicht in dieser Session weggeklickt wurde
+            if (sessionStorage.getItem('pwaPromptDismissed') !== 'true') {
+                const installContainer = document.getElementById('pwa-install-container');
+                const installBtn = document.getElementById('pwa-install-btn');
+                const dismissBtn = document.getElementById('pwa-dismiss-btn');
+
+                if (installContainer && installBtn && dismissBtn) {
+                    installContainer.style.display = 'flex';
+
+                    // Klick auf "Installieren"
+                    installBtn.addEventListener('click', async () => {
+                        installContainer.style.display = 'none';
+                        deferredPrompt.prompt();
+                        const { outcome } = await deferredPrompt.userChoice;
+                        console.log(`User installation choice: ${outcome}`);
+                        deferredPrompt = null;
+                    });
+
+                    // Klick auf "Schließen (X)"
+                    dismissBtn.addEventListener('click', () => {
+                        installContainer.style.display = 'none';
+                        sessionStorage.setItem('pwaPromptDismissed', 'true');
+                    });
+                }
+            }
+        });
+
+        window.addEventListener('appinstalled', (evt) => {
+            console.log('App wurde erfolgreich installiert');
+            const installContainer = document.getElementById('pwa-install-container');
+            if (installContainer) installContainer.style.display = 'none';
+        });
+
 
         // ===== DATEN LOKAL (aus coordinates.js) =====
         let clipperCoordinates = [];
@@ -1464,28 +1578,24 @@ setInterval(() => {
         // ===== GIMBAL LOCK PROTECTION FUNKTIONEN =====
         function applyGimbalLockProtection(currentHeading, pitch) {
             if (!gimbalLockConfig.enabled) return currentHeading;
-            
-            // Gimbal Lock happens horizontally (pitch near -90 or +90), not vertically (pitch 0)
-            const absPitch = Math.abs(pitch);
-            const isNearHorizontal = absPitch >= (90 - gimbalLockConfig.deadZoneEnd);
-            const isCriticallyHorizontal = absPitch >= (90 - gimbalLockConfig.criticalZoneEnd);
 
-            const isInDeadZone = isNearHorizontal;
-            const isInCriticalZone = isCriticallyHorizontal;
-            
-            if (isInCriticalZone) {
+            const absPitch = Math.abs(pitch);
+            const isNearZenithNadir = absPitch >= 75; 
+            const isCriticallyZenithNadir = absPitch >= 85; 
+
+            if (isCriticallyZenithNadir) {
                 if (gimbalLockConfig.lastValidHeading !== null) {
                     return gimbalLockConfig.lastValidHeading;
                 }
-            } else if (isInDeadZone) {
+            } else if (isNearZenithNadir) {
                 if (gimbalLockConfig.lastValidHeading !== null) {
-                    const transitionFactor = calculateTransitionFactor(pitch);
-                    return interpolateHeading(gimbalLockConfig.lastValidHeading, currentHeading, transitionFactor);
+                    const transitionFactor = (absPitch - 75) / 10;
+                    return interpolateHeading(currentHeading, gimbalLockConfig.lastValidHeading, transitionFactor);
                 }
             } else {
                 gimbalLockConfig.lastValidHeading = currentHeading;
             }
-            
+
             return currentHeading;
         }
 
@@ -2322,27 +2432,33 @@ setInterval(() => {
                 orientationSensor.stop();
                 orientationSensor = null;
             }
+
             window.removeEventListener('deviceorientationabsolute', handleDeviceOrientationLegacy, true);
             window.removeEventListener('deviceorientation', handleDeviceOrientationLegacy, true);
 
             if (compassConfig.useAdvancedSensor && 'AbsoluteOrientationSensor' in window) {
                 try {
                     orientationSensor = new AbsoluteOrientationSensor({ frequency: 60, referenceFrame: 'device' });
-                    orientationSensor.addEventListener('reading', handleAdvancedSensorReading);
-                    orientationSensor.addEventListener('error', (event) => {
-                        console.warn("Sensor error:", event.error);
-                        if (event.error.name === 'NotAllowedError' || event.error.name === 'NotReadableError') {
+
+                    orientationSensor.addEventListener('reading', handleAdvancedSensor);
+                    orientationSensor.addEventListener('error', (error) => {
+                        console.warn('Advanced Sensor error:', error.error.name, error.error.message);
+                        if (error.error.name === 'NotReadableError' || error.error.name === 'SecurityError') {
+                            console.log('Falling back to legacy sensor due to error');
                             fallbackToLegacySensor();
                         }
                     });
+
                     orientationSensor.start();
-                    console.log("AbsoluteOrientationSensor gestartet.");
-                    return;
+                    console.log('AbsoluteOrientationSensor gestartet.');
                 } catch (error) {
-                    console.warn("Konnte AbsoluteOrientationSensor nicht starten:", error);
+                    console.warn('Advanced Sensor init failed:', error);
+                    fallbackToLegacySensor();
                 }
+            } else {
+                console.log('Advanced Sensor disabled or unavailable, starting Legacy Sensor.');
+                fallbackToLegacySensor();
             }
-            fallbackToLegacySensor();
         }
 
         function fallbackToLegacySensor() {
@@ -2409,9 +2525,30 @@ setInterval(() => {
                 rawHeading = rawAlpha;
             }
 
-            let rawPitch = beta - 90;
+            // Tilt Compensation
+            const alpha = rawHeading * Math.PI / 180;
+            const betaRad = beta * Math.PI / 180;
+            const gammaRad = gamma * Math.PI / 180;
 
-            applySensorValues(rawHeading, rawPitch, gamma, false, event);
+            let screenOrientation = window.orientation || 0;
+            const orient = screenOrientation * Math.PI / 180;
+
+            const cX = Math.cos(alpha) * Math.cos(gammaRad) - Math.sin(alpha) * Math.sin(betaRad) * Math.sin(gammaRad);
+            const cY = Math.sin(alpha) * Math.cos(gammaRad) + Math.cos(alpha) * Math.sin(betaRad) * Math.sin(gammaRad);
+
+            let compassHeading = Math.atan2(cY, cX) * 180 / Math.PI;
+            if (compassHeading < 0) compassHeading += 360;
+            compassHeading = (compassHeading + screenOrientation) % 360;
+
+            let rawPitch;
+            if (Math.abs(screenOrientation) === 90) {
+                rawPitch = gamma;
+                if (screenOrientation === 90) rawPitch = -rawPitch; 
+            } else {
+                rawPitch = beta - 90;
+            }
+
+            applySensorValues(compassHeading, rawPitch, gamma, false, event);
         }
 
         function applySensorValues(rawAzimuth, rawPitch, rawRoll, isAdvanced, rawEvent) {
