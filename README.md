@@ -25,9 +25,9 @@ Ein webbasierter Augmented-Reality-Himmelsnavigator, der direkt im mobilen Brows
 
 <p align="center">
   <!-- Ersetze diese Pfade mit echten Screenshots, sobald du welche in den Repo-Ordner /images lädst -->
-  <img src="images/screenshot1.jpg" alt="AR Kamera Ansicht" width="32%">
-  <img src="images/screenshot2.jpg" alt="Sternenkarte" width="32%">
-  <img src="images/screenshot3.jpg" alt="Planeten Info" width="32%">
+  <img src="images/screenshot1.png" alt="AR Kamera Ansicht" width="32%">
+  <img src="images/screenshot2.png" alt="Einstellungen" width="32%">
+  <img src="images/screenshot3.png" alt="Planeten Info" width="32%">
 </p>
 
 *(Füge 3 Screenshots in einen Ordner `images/` ein und benenne sie entsprechend, um hier eine Vorschau zu generieren)*
