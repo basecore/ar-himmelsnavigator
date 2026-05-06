@@ -2540,14 +2540,19 @@ setInterval(() => {
             compassHeading = (compassHeading + screenOrientation) % 360;
 
             let rawPitch;
+            let rawRoll;
             if (Math.abs(screenOrientation) === 90) {
                 rawPitch = gamma;
                 if (screenOrientation === 90) rawPitch = -rawPitch; 
+                // In landscape, beta represents roll
+                rawRoll = (screenOrientation === 90) ? -beta : beta;
             } else {
                 rawPitch = beta - 90;
+                // Invert gamma for correct roll rotation in portrait (matching AbsoluteSensor)
+                rawRoll = -gamma;
             }
 
-            applySensorValues(compassHeading, rawPitch, gamma, false, event);
+            applySensorValues(compassHeading, rawPitch, rawRoll, false, event);
         }
 
         function applySensorValues(rawAzimuth, rawPitch, rawRoll, isAdvanced, rawEvent) {
