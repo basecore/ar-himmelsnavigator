@@ -528,13 +528,14 @@
 
         #horizon-line {
             position: fixed;
-            left: 0;
-            width: 100vw;
+            left: -50vw;
+            width: 200vw;
             height: 2px;
             background: rgba(255, 180, 0, 0.5);
             z-index: 3;
             pointer-events: none;
-            transition: top 0.1s;
+            top: 50vh; 
+            transform-origin: center center;
         }
 
         #celestial-path {
@@ -2611,11 +2612,11 @@ setInterval(() => {
         function updateHorizonLine() {
             if (!viewConfig.showHorizon || !dom.horizonLine) return;
 
-            const pitchRadians = (deviceOrientation.pitch * Math.PI) / 180;
-            const horizonOffset = Math.tan(pitchRadians) * (viewport.height / 2) * compassConfig.pitchSensitivity;
-            const horizonY = (viewport.height / 2) + horizonOffset;
+            const fovHalf = viewConfig.fieldOfView / 2;
+            const yOffset = (-deviceOrientation.pitch / fovHalf) * (viewport.height / 2);
+            const rollAngle = -deviceOrientation.roll;
 
-            dom.horizonLine.style.top = `${Math.max(0, Math.min(viewport.height, horizonY))}px`;
+            dom.horizonLine.style.transform = `translateY(${yOffset}px) rotate(${rollAngle}deg)`;
         }
 
         function update3DDirectionArrow() {
