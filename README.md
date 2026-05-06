@@ -30,8 +30,6 @@ Ein webbasierter Augmented-Reality-Himmelsnavigator, der direkt im mobilen Brows
   <img src="images/screenshot3.png" alt="Planeten Info" width="32%">
 </p>
 
-*(Füge 3 Screenshots in einen Ordner `images/` ein und benenne sie entsprechend, um hier eine Vorschau zu generieren)*
-
 ---
 
 ## 🚀 Hauptfunktionen
