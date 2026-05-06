@@ -609,7 +609,15 @@
             color: #fff;
         }
 
-    </style>
+    
+        /* --- Rot-Filter (Nachtsicht) --- */
+        body.red-mode-active {
+            /* Helligkeit (brightness) stark reduziert (von 0.8 auf 0.3), damit Weiß zu einem dunklen Rot wird */
+            filter: grayscale(100%) sepia(100%) hue-rotate(315deg) saturate(500%) brightness(0.35) contrast(1.4) !important;
+            background-color: #000 !important;
+        }
+
+</style>
 </head>
 <body>
 
@@ -820,6 +828,13 @@
             <button class="panel-toggle" onclick="togglePanel('settings-panel')">▼</button>
         </div>
         <div class="panel-content">
+            <!-- START ROTFILTER -->
+            <div class="control-group">
+                <h4>🔴 Nachtsicht</h4>
+                <label><input type="checkbox" id="toggle-red-mode"> Rot-Filter aktivieren</label>
+            </div>
+            <!-- ENDE ROTFILTER -->
+
             <div class="control-group">
                 <h4>📹 Kamera</h4>
                 <label><input type="checkbox" id="camera-enabled"> Kamera aktiviert</label>
@@ -3400,6 +3415,23 @@ setInterval(() => {
             });
         }
         </script>
+
+
+<script>
+        // Nachtsicht Rot-Filter Logik
+        document.addEventListener('DOMContentLoaded', () => {
+            const redModeToggle = document.getElementById('toggle-red-mode');
+            if (redModeToggle) {
+                redModeToggle.addEventListener('change', (e) => {
+                    if (e.target.checked) {
+                        document.body.classList.add('red-mode-active');
+                    } else {
+                        document.body.classList.remove('red-mode-active');
+                    }
+                });
+            }
+        });
+</script>
 
 </body>
 </html>
