@@ -2570,13 +2570,9 @@ setInterval(() => {
                 if (screenOrientation !== 0) {
                     rawAzimuth = (rawAzimuth + screenOrientation + 360) % 360;
                 }
-            } else if (!event.absolute && !compassConfig.useAbsolute) {
-                // Not absolute sensor, user might need manual offset
-            } else {
-                // If the device does not give absolute alpha directly, we invert it for heading.
-                // Standard alpha is counter-clockwise, compass heading is clockwise.
-                rawAzimuth = (360 - rawAzimuth) % 360;
             }
+            // Keine Invertierung für Android/Firefox nötig, da das Quaternion (v_x, v_y)
+            // genau dasselbe Koordinatensystem wie der AbsoluteSensor aufbaut.
 
             let rawPitch = Math.asin(Math.max(-1, Math.min(1, v_z))) * 180 / Math.PI;
             let rawRoll = -Math.asin(Math.max(-1, Math.min(1, 2 * (x * z - w * y)))) * 180 / Math.PI;
