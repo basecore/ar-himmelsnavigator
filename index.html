@@ -2435,7 +2435,7 @@ setInterval(() => {
 
                 updateHorizonLine();
                 updateCompassRose();
-                update3DDirectionArrow();
+                if (arrowConfig.show3DArrow) { update3DDirectionArrow(); } else { dom.directionCanvas.style.opacity = '0'; dom.directionCtx.clearRect(0, 0, dom.directionCanvas.width, dom.directionCanvas.height); }
                 updateCelestialInViewport();
                 updateSensorMini();
 
