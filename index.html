@@ -2613,7 +2613,7 @@ setInterval(() => {
             if (!viewConfig.showHorizon || !dom.horizonLine) return;
 
             const fovHalf = viewConfig.fieldOfView / 2;
-            const yOffset = (-deviceOrientation.pitch / fovHalf) * (viewport.height / 2);
+            const yOffset = (deviceOrientation.pitch / fovHalf) * (viewport.height / 2);
             const rollAngle = -deviceOrientation.roll;
 
             dom.horizonLine.style.transform = `translateY(${yOffset}px) rotate(${rollAngle}deg)`;
