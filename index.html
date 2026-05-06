@@ -1404,8 +1404,11 @@
                             const altitudeDiff = starPos.altitude - deviceOrientation.pitch;
                             
                             const fovHalf = viewConfig.fieldOfView / 2;
-                            const x = (azimuthDiff / fovHalf) * (window.innerWidth / 2) + window.innerWidth / 2;
-                            const y = (-altitudeDiff / fovHalf) * (window.innerHeight / 2) + window.innerHeight / 2;
+                            let x_raw = (azimuthDiff / fovHalf) * (window.innerWidth / 2);
+                            let y_raw = (-altitudeDiff / fovHalf) * (window.innerHeight / 2);
+                            let rollR = (-deviceOrientation.roll * Math.PI) / 180;
+                            const x = (x_raw * Math.cos(rollR) - y_raw * Math.sin(rollR)) + window.innerWidth / 2;
+                            const y = (x_raw * Math.sin(rollR) + y_raw * Math.cos(rollR)) + window.innerHeight / 2;
                             
                             const distance = Math.sqrt((centerX - x) ** 2 + (centerY - y) ** 2);
                             if (distance < detectionRadius) {
@@ -1428,8 +1431,11 @@
                         const altitudeDiff = bodyPos.altitude - deviceOrientation.pitch;
                         
                         const fovHalf = viewConfig.fieldOfView / 2;
-                        const x = (azimuthDiff / fovHalf) * (window.innerWidth / 2) + window.innerWidth / 2;
-                        const y = (-altitudeDiff / fovHalf) * (window.innerHeight / 2) + window.innerHeight / 2;
+                        let x_raw = (azimuthDiff / fovHalf) * (window.innerWidth / 2);
+                        let y_raw = (-altitudeDiff / fovHalf) * (window.innerHeight / 2);
+                        let rollR = (-deviceOrientation.roll * Math.PI) / 180;
+                        const x = (x_raw * Math.cos(rollR) - y_raw * Math.sin(rollR)) + window.innerWidth / 2;
+                        const y = (x_raw * Math.sin(rollR) + y_raw * Math.cos(rollR)) + window.innerHeight / 2;
                         
                         const distance = Math.sqrt((centerX - x) ** 2 + (centerY - y) ** 2);
                         const size = getBodySize(bodyKey, bodyPos.altitude > -5) * celestialConfig.size;
@@ -1540,8 +1546,11 @@ setInterval(() => {
                     const altitudeDiff = starPos.altitude - deviceOrientation.pitch;
                     
                     const fovHalf = viewConfig.fieldOfView / 2;
-                    const x = (azimuthDiff / fovHalf) * (window.innerWidth / 2) + window.innerWidth / 2;
-                    const y = (-altitudeDiff / fovHalf) * (window.innerHeight / 2) + window.innerHeight / 2;
+                    let x_raw = (azimuthDiff / fovHalf) * (window.innerWidth / 2);
+                    let y_raw = (-altitudeDiff / fovHalf) * (window.innerHeight / 2);
+                    let rollR = (-deviceOrientation.roll * Math.PI) / 180;
+                    const x = (x_raw * Math.cos(rollR) - y_raw * Math.sin(rollR)) + window.innerWidth / 2;
+                    const y = (x_raw * Math.sin(rollR) + y_raw * Math.cos(rollR)) + window.innerHeight / 2;
                     
                     if (x >= 0 && x <= window.innerWidth && y >= 0 && y <= window.innerHeight) {
                         const brightness = Math.max(0.1, Math.min(1, (6 - star.mag) / 6)) * starsConfig.brightness;
@@ -2064,8 +2073,11 @@ setInterval(() => {
                         const altitudeDiff = bodyPos.altitude - deviceOrientation.pitch;
                         
                         const fovHalf = viewConfig.fieldOfView / 2;
-                        const x = (azimuthDiff / fovHalf) * (window.innerWidth / 2) + window.innerWidth / 2;
-                        const y = (-altitudeDiff / fovHalf) * (window.innerHeight / 2) + window.innerHeight / 2;
+                        let x_raw = (azimuthDiff / fovHalf) * (window.innerWidth / 2);
+                        let y_raw = (-altitudeDiff / fovHalf) * (window.innerHeight / 2);
+                        let rollR = (-deviceOrientation.roll * Math.PI) / 180;
+                        const x = (x_raw * Math.cos(rollR) - y_raw * Math.sin(rollR)) + window.innerWidth / 2;
+                        const y = (x_raw * Math.sin(rollR) + y_raw * Math.cos(rollR)) + window.innerHeight / 2;
                         
                         if (x >= 0 && x <= window.innerWidth && y >= 0 && y <= window.innerHeight) {
                             const isVisible = bodyPos.altitude > -5;
@@ -2511,48 +2523,65 @@ setInterval(() => {
         function handleDeviceOrientationLegacy(event) {
             if (event.alpha == null && event.beta == null && event.gamma == null) return;
 
-            let rawAlpha = event.alpha || 0;
+            let alpha = event.alpha || 0;
             let beta = event.beta || 0;
             let gamma = event.gamma || 0;
 
-            let rawHeading = 0;
+            const degtorad = Math.PI / 180;
+            const _x = beta * degtorad;
+            const _y = gamma * degtorad;
+            const _z = alpha * degtorad;
 
-            if (event.webkitCompassHeading !== undefined && compassConfig.useWebkit) {
-                rawHeading = event.webkitCompassHeading;
-            } else if (event.absolute === true && compassConfig.useAbsolute) {
-                rawHeading = (360 - rawAlpha) % 360;
-            } else {
-                rawHeading = rawAlpha;
-            }
+            const cX = Math.cos(_x/2);
+            const cY = Math.cos(_y/2);
+            const cZ = Math.cos(_z/2);
+            const sX = Math.sin(_x/2);
+            const sY = Math.sin(_y/2);
+            const sZ = Math.sin(_z/2);
 
-            // Tilt Compensation
-            const alpha = rawHeading * Math.PI / 180;
-            const betaRad = beta * Math.PI / 180;
-            const gammaRad = gamma * Math.PI / 180;
+            let w = cX * cY * cZ - sX * sY * sZ;
+            let x = sX * cY * cZ - cX * sY * sZ;
+            let y = cX * sY * cZ + sX * cY * sZ;
+            let z = cX * cY * sZ + sX * sY * cZ;
 
             let screenOrientation = window.orientation || 0;
+            if (screenOrientation !== 0) {
+                const angle = -screenOrientation * degtorad / 2;
+                const sqw = Math.cos(angle);
+                const sqz = Math.sin(angle);
 
-            const cX = Math.cos(alpha) * Math.cos(gammaRad) - Math.sin(alpha) * Math.sin(betaRad) * Math.sin(gammaRad);
-            const cY = Math.sin(alpha) * Math.cos(gammaRad) + Math.cos(alpha) * Math.sin(betaRad) * Math.sin(gammaRad);
+                const nw = w * sqw - z * sqz;
+                const nx = x * sqw + y * sqz;
+                const ny = y * sqw - x * sqz;
+                const nz = z * sqw + w * sqz;
 
-            let compassHeading = Math.atan2(cY, cX) * 180 / Math.PI;
-            if (compassHeading < 0) compassHeading += 360;
-            compassHeading = (compassHeading + screenOrientation) % 360;
-
-            let rawPitch;
-            let rawRoll;
-            if (Math.abs(screenOrientation) === 90) {
-                rawPitch = gamma;
-                if (screenOrientation === 90) rawPitch = -rawPitch; 
-                // In landscape, beta represents roll
-                rawRoll = (screenOrientation === 90) ? -beta : beta;
-            } else {
-                rawPitch = beta - 90;
-                // Invert gamma for correct roll rotation in portrait (matching AbsoluteSensor)
-                rawRoll = -gamma;
+                w = nw; x = nx; y = ny; z = nz;
             }
 
-            applySensorValues(compassHeading, rawPitch, rawRoll, false, event);
+            const v_x = -2 * (x * z + w * y);
+            const v_y = -2 * (y * z - w * x);
+            const v_z = -(1 - 2 * (x * x + y * y));
+
+            let rawAzimuth = Math.atan2(v_x, v_y) * 180 / Math.PI;
+            if (rawAzimuth < 0) rawAzimuth += 360;
+
+            if (event.webkitCompassHeading !== undefined && compassConfig.useWebkit) {
+                rawAzimuth = event.webkitCompassHeading;
+                if (screenOrientation !== 0) {
+                    rawAzimuth = (rawAzimuth + screenOrientation + 360) % 360;
+                }
+            } else if (!event.absolute && !compassConfig.useAbsolute) {
+                // Not absolute sensor, user might need manual offset
+            } else {
+                // If the device does not give absolute alpha directly, we invert it for heading.
+                // Standard alpha is counter-clockwise, compass heading is clockwise.
+                rawAzimuth = (360 - rawAzimuth) % 360;
+            }
+
+            let rawPitch = Math.asin(Math.max(-1, Math.min(1, v_z))) * 180 / Math.PI;
+            let rawRoll = -Math.asin(Math.max(-1, Math.min(1, 2 * (x * z - w * y)))) * 180 / Math.PI;
+
+            applySensorValues(rawAzimuth, rawPitch, rawRoll, false, event);
         }
 
         function applySensorValues(rawAzimuth, rawPitch, rawRoll, isAdvanced, rawEvent) {
@@ -3321,8 +3350,11 @@ setInterval(() => {
                 const altitudeDiff = pos.altitude - deviceOrientation.pitch;
                 
                 const fovHalf = viewConfig.fieldOfView / 2;
-                const x = (azimuthDiff / fovHalf) * (width / 2) + (width / 2);
-                const y = (-altitudeDiff / fovHalf) * (height / 2) + (height / 2);
+                let x_raw = (azimuthDiff / fovHalf) * (width / 2);
+                let y_raw = (-altitudeDiff / fovHalf) * (height / 2);
+                let rollR = (-deviceOrientation.roll * Math.PI) / 180;
+                const x = (x_raw * Math.cos(rollR) - y_raw * Math.sin(rollR)) + (width / 2);
+                const y = (x_raw * Math.sin(rollR) + y_raw * Math.cos(rollR)) + (height / 2);
                 pathPoints.push({ x, y, hour, altitude: pos.altitude, azimuth: pos.azimuth, time: testTime });
             }
 
