@@ -871,6 +871,10 @@
             <div class="control-group">
                 <h4>🎯 Farbige Pfeile</h4>
                 <label><input type="checkbox" id="show-3d-arrow" checked> 3D-Pfeil anzeigen</label>
+                </div>
+                <div class="control-group">
+                    <label>Pfeil-Größe: <span id="arrow-size-value">1.0</span></label>
+                    <input type="range" id="arrow-size" min="0.5" max="3.0" step="0.1" value="1.0">
                 <label><input type="checkbox" id="show-elevation-indicator" checked> Höhenwinkel-Indikator</label>
                 <label><input type="checkbox" id="separate-sensors"> Getrennte Sensoren (🔵Kompass / 🔴Neigung)</label>
                 <label><input type="checkbox" id="dynamic-length" checked> Dynamische Pfeillänge</label>
@@ -2346,7 +2350,7 @@ setInterval(() => {
             });
 
             
-        document.getElementById('show-3d-arrow').addEventListener('change', (e) => {
+        document.getElementById('show-3d-arrow')?.addEventListener('change', (e) => {
             arrowConfig.show3DArrow = e.target.checked;
             if (!arrowConfig.show3DArrow) {
                 dom.directionCanvas.style.opacity = '0';
@@ -2354,20 +2358,20 @@ setInterval(() => {
             }
         });
 
-        document.getElementById('arrow-size').addEventListener('input', (e) => {
+        document.getElementById('arrow-size')?.addEventListener('input', (e) => {
             arrowConfig.arrowScale = parseFloat(e.target.value);
             document.getElementById('arrow-size-value').textContent = arrowConfig.arrowScale.toFixed(1);
         });
 
-        document.getElementById('show-elevation-indicator').addEventListener('change', e => {
+        document.getElementById('show-elevation-indicator')?.addEventListener('change', e => {
                 arrowConfig.showElevationIndicator = e.target.checked;
             });
 
-            document.getElementById('separate-sensors').addEventListener('change', e => {
+            document.getElementById('separate-sensors')?.addEventListener('change', e => {
                 arrowConfig.separateSensors = e.target.checked;
             });
 
-            document.getElementById('dynamic-length').addEventListener('change', e => {
+            document.getElementById('dynamic-length')?.addEventListener('change', e => {
                 arrowConfig.dynamicLength = e.target.checked;
             });
 
