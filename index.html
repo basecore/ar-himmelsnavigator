@@ -872,7 +872,7 @@
                 <h4>🎯 Farbige Pfeile</h4>
                 <label><input type="checkbox" id="show-3d-arrow" checked disabled> 3D-Pfeil (immer an)</label>
                 <label><input type="checkbox" id="show-elevation-indicator" checked> Höhenwinkel-Indikator</label>
-                <label><input type="checkbox" id="separate-sensors" checked> Getrennte Sensoren (🔵Kompass / 🔴Neigung)</label>
+                <label><input type="checkbox" id="separate-sensors"> Getrennte Sensoren (🔵Kompass / 🔴Neigung)</label>
                 <label><input type="checkbox" id="dynamic-length" checked> Dynamische Pfeillänge</label>
                 <label>Pfeil-Sensitivität: <input type="range" id="arrow-sensitivity" min="0.5" max="3" value="1" step="0.1">
                 <span id="arrow-sens-value">1.0</span></label>
@@ -1088,7 +1088,7 @@
             show3DArrow: true,
             showElevationIndicator: true,
             arrowSensitivity: 1.0,
-            separateSensors: true,
+            separateSensors: false,
             dynamicLength: true
         };
         
@@ -2682,9 +2682,9 @@ setInterval(() => {
 
                 const maxLength = 60;
                 const arrowWidth = 3;
-
+                
                 let horizontalLength, verticalLength;
-
+                
                 if (arrowConfig.dynamicLength) {
                     horizontalLength = maxLength * (Math.min(Math.abs(azimuthDiff) / 180, 1));
                     verticalLength = maxLength * (Math.min(Math.abs(pitchDiff) / 90, 1));
@@ -2759,7 +2759,7 @@ setInterval(() => {
                             ctx.fill();
                         }
                     }
-
+                    
                     ctx.fillStyle = 'rgba(255, 51, 51, 0.7)';
                     const vIntensity = Math.abs(pitchDiff) / 90;
                     for (let i = 1; i <= 3; i++) {
@@ -2776,68 +2776,61 @@ setInterval(() => {
 
                 ctx.font = 'bold 10px Arial';
                 ctx.textAlign = 'center';
-
+                
                 ctx.fillStyle = '#0066ff';
                 ctx.fillText(`↔${Math.abs(azimuthDiff).toFixed(0)}°`, centerX, canvas.height - 25);
-
+                
                 ctx.fillStyle = '#ff3333';
                 ctx.fillText(`↕${Math.abs(pitchDiff).toFixed(0)}°`, centerX, canvas.height - 10);
 
             } else {
-                // **NEUER GROSSER FREI BEWEGLICHER PFEIL**
-                const azimuthDiff = getShortestAngle(deviceOrientation.azimuth, celestialPos.azimuth);
-                const pitchDiff = celestialPos.altitude - deviceOrientation.pitch;
+                // **ORIGINAL-MODUS MIT HIMMELSKÖRPER-SPEZIFISCHEN FARBEN**
+                let azimuthAngle = getShortestAngle(deviceOrientation.azimuth, celestialPos.azimuth);
+                const pitchDiff = (celestialPos.altitude - deviceOrientation.pitch) * arrowConfig.arrowSensitivity;
 
-                // Math.atan2(y, x) -> Returns angle in radians relative to positive x-axis.
-                // y is pitchDiff (Up is positive, but on canvas Up is negative y)
-                // x is azimuthDiff (Right is positive)
-                // To point towards the object on the screen:
-                // If object is to the right (azimuthDiff > 0), x > 0
-                // If object is up (pitchDiff > 0), y < 0 on canvas.
-                // So, screen_x = azimuthDiff, screen_y = -pitchDiff
-
-                // We want the angle of the arrow.
-                const screenAngle = Math.atan2(-pitchDiff, azimuthDiff);
-
-                const totalDiff = Math.sqrt(azimuthDiff * azimuthDiff + pitchDiff * pitchDiff);
+                const maxLength = 60;
+                const arrowWidth = 3;
+                let baseLength;
+                if (arrowConfig.dynamicLength) {
+                    const totalDiff = Math.sqrt(azimuthAngle * azimuthAngle + pitchDiff * pitchDiff);
+                    baseLength = maxLength * (totalDiff / 180);
+                    baseLength = Math.max(15, Math.min(maxLength, baseLength));
+                } else {
+                    baseLength = 50;
+                }
 
                 ctx.save();
                 ctx.translate(centerX, centerY);
 
                 const body = celestialBodies[currentCelestialBody];
-                // Make the arrow semi-transparent if the body is below the horizon
                 const arrowColor = isVisible ? body.color : body.color.replace(')', ', 0.5)').replace('rgb', 'rgba');
 
-                const scale = 1.5;
-                ctx.scale(scale, scale);
-
-                ctx.rotate(screenAngle);
-
-                // Draw a styled navigation arrow (Chevron style)
+                ctx.strokeStyle = arrowColor;
                 ctx.fillStyle = arrowColor;
-                ctx.strokeStyle = '#FFFFFF';
-                ctx.lineWidth = 1.5;
-                ctx.shadowColor = body.shadowColor;
-                ctx.shadowBlur = 10;
+                ctx.lineWidth = arrowWidth;
 
-                // Arrow pointing to the RIGHT side (0 radians)
+                ctx.rotate((azimuthAngle * Math.PI) / 180);
+
+                const pitchOffset = -Math.max(-20, Math.min(20, pitchDiff * 2));
+
                 ctx.beginPath();
-                ctx.moveTo(30, 0);       // Tip (Front)
-                ctx.lineTo(-15, 20);     // Bottom wing
-                ctx.lineTo(-5, 0);       // Inner center (back cutout)
-                ctx.lineTo(-15, -20);    // Top wing
-                ctx.closePath();
-
-                ctx.fill();
+                ctx.moveTo(0, -baseLength + pitchOffset);
+                ctx.lineTo(0, baseLength - pitchOffset);
                 ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(0, -baseLength + pitchOffset);
+                ctx.lineTo(-12, -baseLength + 15 + pitchOffset);
+                ctx.lineTo(12, -baseLength + 15 + pitchOffset);
+                ctx.closePath();
+                ctx.fill();
 
                 ctx.restore();
 
-                // Status Text
                 ctx.fillStyle = arrowColor;
-                ctx.font = 'bold 12px Arial';
+                ctx.font = 'bold 11px Arial';
                 ctx.textAlign = 'center';
-                ctx.fillText(`Dist: ${totalDiff.toFixed(0)}°`, centerX, canvas.height - 15);
+                ctx.fillText(`${Math.abs(azimuthAngle).toFixed(0)}°`, centerX, canvas.height - 10);
             }
         }
 
