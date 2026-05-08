@@ -872,7 +872,7 @@
                 <h4>🎯 Farbige Pfeile</h4>
                 <label><input type="checkbox" id="show-3d-arrow" checked disabled> 3D-Pfeil (immer an)</label>
                 <label><input type="checkbox" id="show-elevation-indicator" checked> Höhenwinkel-Indikator</label>
-                <label><input type="checkbox" id="separate-sensors" checked> Getrennte Sensoren (🔵Kompass / 🔴Neigung)</label>
+                <label><input type="checkbox" id="separate-sensors"> Getrennte Sensoren (🔵Kompass / 🔴Neigung)</label>
                 <label><input type="checkbox" id="dynamic-length" checked> Dynamische Pfeillänge</label>
                 <label>Pfeil-Sensitivität: <input type="range" id="arrow-sensitivity" min="0.5" max="3" value="1" step="0.1">
                 <span id="arrow-sens-value">1.0</span></label>
@@ -1088,7 +1088,7 @@
             show3DArrow: true,
             showElevationIndicator: true,
             arrowSensitivity: 1.0,
-            separateSensors: true,
+            separateSensors: false,
             dynamicLength: true
         };
         
@@ -2435,7 +2435,7 @@ setInterval(() => {
 
                 updateHorizonLine();
                 updateCompassRose();
-                if (arrowConfig.show3DArrow) { update3DDirectionArrow(); } else { dom.directionCanvas.style.opacity = '0'; dom.directionCtx.clearRect(0, 0, dom.directionCanvas.width, dom.directionCanvas.height); }
+                update3DDirectionArrow();
                 updateCelestialInViewport();
                 updateSensorMini();
 
