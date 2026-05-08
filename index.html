@@ -872,7 +872,7 @@
                 <h4>🎯 Farbige Pfeile</h4>
                 <label><input type="checkbox" id="show-3d-arrow" checked disabled> 3D-Pfeil (immer an)</label>
                 <label><input type="checkbox" id="show-elevation-indicator" checked> Höhenwinkel-Indikator</label>
-                <label><input type="checkbox" id="separate-sensors"> Getrennte Sensoren (🔵Kompass / 🔴Neigung)</label>
+                <label><input type="checkbox" id="separate-sensors" checked> Getrennte Sensoren (🔵Kompass / 🔴Neigung)</label>
                 <label><input type="checkbox" id="dynamic-length" checked> Dynamische Pfeillänge</label>
                 <label>Pfeil-Sensitivität: <input type="range" id="arrow-sensitivity" min="0.5" max="3" value="1" step="0.1">
                 <span id="arrow-sens-value">1.0</span></label>
@@ -1088,7 +1088,7 @@
             show3DArrow: true,
             showElevationIndicator: true,
             arrowSensitivity: 1.0,
-            separateSensors: false,
+            separateSensors: true,
             dynamicLength: true
         };
         
@@ -2682,9 +2682,9 @@ setInterval(() => {
 
                 const maxLength = 60;
                 const arrowWidth = 3;
-                
+
                 let horizontalLength, verticalLength;
-                
+
                 if (arrowConfig.dynamicLength) {
                     horizontalLength = maxLength * (Math.min(Math.abs(azimuthDiff) / 180, 1));
                     verticalLength = maxLength * (Math.min(Math.abs(pitchDiff) / 90, 1));
@@ -2698,7 +2698,6 @@ setInterval(() => {
                 ctx.save();
                 ctx.translate(centerX, centerY);
 
-                // **HORIZONTALER BALKEN (BLAU) - Kompass**
                 ctx.strokeStyle = '#0066ff';
                 ctx.fillStyle = '#0066ff';
                 ctx.lineWidth = arrowWidth;
@@ -2708,7 +2707,6 @@ setInterval(() => {
                 ctx.lineTo(horizontalLength, 0);
                 ctx.stroke();
 
-                // **VERTIKALER BALKEN (ROT) - Neigung**
                 ctx.strokeStyle = '#ff3333';
                 ctx.fillStyle = '#ff3333';
                 ctx.lineWidth = arrowWidth;
@@ -2718,7 +2716,6 @@ setInterval(() => {
                 ctx.lineTo(0, verticalLength);
                 ctx.stroke();
 
-                // **PFEILSPITZEN**
                 const arrowSize = Math.min(12, horizontalLength * 0.4);
                 ctx.fillStyle = '#0066ff';
                 ctx.beginPath();
@@ -2759,7 +2756,7 @@ setInterval(() => {
                             ctx.fill();
                         }
                     }
-                    
+
                     ctx.fillStyle = 'rgba(255, 51, 51, 0.7)';
                     const vIntensity = Math.abs(pitchDiff) / 90;
                     for (let i = 1; i <= 3; i++) {
@@ -2773,31 +2770,20 @@ setInterval(() => {
                 }
 
                 ctx.restore();
-
                 ctx.font = 'bold 10px Arial';
                 ctx.textAlign = 'center';
-                
                 ctx.fillStyle = '#0066ff';
                 ctx.fillText(`↔${Math.abs(azimuthDiff).toFixed(0)}°`, centerX, canvas.height - 25);
-                
                 ctx.fillStyle = '#ff3333';
                 ctx.fillText(`↕${Math.abs(pitchDiff).toFixed(0)}°`, centerX, canvas.height - 10);
 
             } else {
-                // **ORIGINAL-MODUS MIT HIMMELSKÖRPER-SPEZIFISCHEN FARBEN**
-                let azimuthAngle = getShortestAngle(deviceOrientation.azimuth, celestialPos.azimuth);
-                const pitchDiff = (celestialPos.altitude - deviceOrientation.pitch) * arrowConfig.arrowSensitivity;
+                // **NEUER FREI BEWEGLICHER PFEIL MIT "UMDREHEN" LOGIK**
 
-                const maxLength = 60;
-                const arrowWidth = 3;
-                let baseLength;
-                if (arrowConfig.dynamicLength) {
-                    const totalDiff = Math.sqrt(azimuthAngle * azimuthAngle + pitchDiff * pitchDiff);
-                    baseLength = maxLength * (totalDiff / 180);
-                    baseLength = Math.max(15, Math.min(maxLength, baseLength));
-                } else {
-                    baseLength = 50;
-                }
+                let azimuthDiff = getShortestAngle(deviceOrientation.azimuth, celestialPos.azimuth);
+                let pitchDiff = celestialPos.altitude - deviceOrientation.pitch;
+
+                const totalDiff = Math.sqrt(azimuthDiff * azimuthDiff + pitchDiff * pitchDiff);
 
                 ctx.save();
                 ctx.translate(centerX, centerY);
@@ -2805,32 +2791,84 @@ setInterval(() => {
                 const body = celestialBodies[currentCelestialBody];
                 const arrowColor = isVisible ? body.color : body.color.replace(')', ', 0.5)').replace('rgb', 'rgba');
 
-                ctx.strokeStyle = arrowColor;
+                if (totalDiff < 3.0) {
+                    // Ziel erfasst
+                    ctx.strokeStyle = arrowColor;
+                    ctx.lineWidth = 3;
+                    ctx.shadowColor = body.shadowColor;
+                    ctx.shadowBlur = 15;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 25, 0, 2 * Math.PI);
+                    ctx.stroke();
+
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 4, 0, 2 * Math.PI);
+                    ctx.fillStyle = arrowColor;
+                    ctx.fill();
+
+                    ctx.restore();
+                    ctx.fillStyle = arrowColor;
+                    ctx.font = 'bold 12px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('Ziel erfasst', centerX, canvas.height - 15);
+                    return;
+                }
+
+                // Prüfen ob das Objekt hinter dem Nutzer ist (mehr als 90 Grad Azimut-Abweichung)
+                const isBehind = Math.abs(azimuthDiff) > 90;
+                let screenAngle;
+                let scale = 1.8;
+                let isLongArrow = false;
+
+                if (isBehind) {
+                    // Objekt ist HINTER dem Nutzer. Wir zeigen einfach streng nach links oder rechts.
+                    screenAngle = azimuthDiff > 0 ? 0 : Math.PI; // 0 = Rechts, Math.PI = Links
+                    scale = 2.4; // Deutlich längerer Pfeil
+                    isLongArrow = true;
+                } else {
+                    // Objekt ist VOR dem Nutzer. Normaler 2D Winkel zum exakten Punkt.
+                    screenAngle = Math.atan2(-pitchDiff, azimuthDiff);
+                }
+
+                ctx.scale(scale, scale);
+                ctx.rotate(screenAngle);
+
                 ctx.fillStyle = arrowColor;
-                ctx.lineWidth = arrowWidth;
-
-                ctx.rotate((azimuthAngle * Math.PI) / 180);
-
-                const pitchOffset = -Math.max(-20, Math.min(20, pitchDiff * 2));
-
-                ctx.beginPath();
-                ctx.moveTo(0, -baseLength + pitchOffset);
-                ctx.lineTo(0, baseLength - pitchOffset);
-                ctx.stroke();
+                ctx.strokeStyle = '#FFFFFF';
+                ctx.lineWidth = 1.0;
+                ctx.shadowColor = body.shadowColor;
+                ctx.shadowBlur = 8;
 
                 ctx.beginPath();
-                ctx.moveTo(0, -baseLength + pitchOffset);
-                ctx.lineTo(-12, -baseLength + 15 + pitchOffset);
-                ctx.lineTo(12, -baseLength + 15 + pitchOffset);
+                if (isLongArrow) {
+                    // Längeres, flacheres Profil für "Umdrehen"
+                    ctx.moveTo(35, 0);       
+                    ctx.lineTo(-15, 12);     
+                    ctx.lineTo(-5, 0);       
+                    ctx.lineTo(-15, -12);    
+                } else {
+                    // Normaler Pfeil
+                    ctx.moveTo(25, 0);       
+                    ctx.lineTo(-15, 18);     
+                    ctx.lineTo(-5, 0);       
+                    ctx.lineTo(-15, -18);    
+                }
                 ctx.closePath();
+
                 ctx.fill();
+                ctx.stroke();
 
                 ctx.restore();
 
                 ctx.fillStyle = arrowColor;
-                ctx.font = 'bold 11px Arial';
+                ctx.font = 'bold 12px Arial';
                 ctx.textAlign = 'center';
-                ctx.fillText(`${Math.abs(azimuthAngle).toFixed(0)}°`, centerX, canvas.height - 10);
+
+                if (isBehind) {
+                    ctx.fillText(`Umdrehen!`, centerX, canvas.height - 15);
+                } else {
+                    ctx.fillText(`Dist: ${totalDiff.toFixed(0)}°`, centerX, canvas.height - 15);
+                }
             }
         }
 
