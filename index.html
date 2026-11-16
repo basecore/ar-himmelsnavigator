@@ -12,7 +12,7 @@
     <meta name="theme-color" content="#0a1628">
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/suncalc/1.9.0/suncalc.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/astronomy-engine@2.1.19/astronomy.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/astronomy-engine@2.1.19/astronomy.browser.min.js"></script>
     <script src="coordinates.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -926,6 +926,7 @@
             <div class="control-group">
                 <label><input type="checkbox" id="debug-mode"> Debug-Modus</label>
             </div>
+            <pre id="calculation-diagnostics" style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px"></pre>
             <div id="debug-values"></div>
         </div>
     </div>
@@ -935,8 +936,9 @@
         // ===== PWA & SERVICE WORKER =====
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js').then(reg => {
+                navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(reg => {
                     console.log('ServiceWorker registriert:', reg.scope);
+                    reg.update().catch(err => console.warn('SW Update:', err));
                 }).catch(err => {
                     console.warn('ServiceWorker Fehler:', err);
                 });
@@ -1031,16 +1033,16 @@
 
         // ===== GLOBALE VARIABLEN =====
         let userLocation = { lat: null, lon: null };
-        let sunPosition = { azimuth: 0, altitude: 0 };
-        let moonPosition = { azimuth: 0, altitude: 0 };
-        let mercuryPosition = { azimuth: 0, altitude: 0, magnitude: 0, distance: 0 };
-        let venusPosition = { azimuth: 0, altitude: 0, magnitude: 0, distance: 0 };
-        let marsPosition = { azimuth: 0, altitude: 0, magnitude: 0, distance: 0 };
-        let jupiterPosition = { azimuth: 0, altitude: 0, magnitude: 0, distance: 0 };
-        let saturnPosition = { azimuth: 0, altitude: 0, magnitude: 0, distance: 0 };
-        let uranusPosition = { azimuth: 0, altitude: 0, magnitude: 0, distance: 0 };
-        let neptunePosition = { azimuth: 0, altitude: 0, magnitude: 0, distance: 0 };
-        let europaClipperPosition = { azimuth: 0, altitude: 0, magnitude: 0, distance: 0, velocity: 0 };
+        let sunPosition = { azimuth: NaN, altitude: NaN };
+        let moonPosition = { azimuth: NaN, altitude: NaN };
+        let mercuryPosition = { azimuth: NaN, altitude: NaN, magnitude: 0, distance: 0 };
+        let venusPosition = { azimuth: NaN, altitude: NaN, magnitude: 0, distance: 0 };
+        let marsPosition = { azimuth: NaN, altitude: NaN, magnitude: 0, distance: 0 };
+        let jupiterPosition = { azimuth: NaN, altitude: NaN, magnitude: 0, distance: 0 };
+        let saturnPosition = { azimuth: NaN, altitude: NaN, magnitude: 0, distance: 0 };
+        let uranusPosition = { azimuth: NaN, altitude: NaN, magnitude: 0, distance: 0 };
+        let neptunePosition = { azimuth: NaN, altitude: NaN, magnitude: 0, distance: 0 };
+        let europaClipperPosition = { azimuth: NaN, altitude: NaN, magnitude: 0, distance: 0, velocity: 0 };
         let currentCelestialBody = 'europa-clipper';
         let deviceOrientation = { azimuth: 0, pitch: 0, roll: 0 };
         let calibrationOffset = 0;
@@ -1665,73 +1667,287 @@ setInterval(() => {
         }
 
         // ===== VERBESSERTE LOKALE PLANETEN-BERECHNUNG FÜR ALLE PLANETEN =====
-        function calculatePlanetPositionAdvanced(planetName, date, lat, lon) {
-            const bodyMap = {
-                mercury: Astronomy.Body.Mercury,
-                venus: Astronomy.Body.Venus,
-                mars: Astronomy.Body.Mars,
-                jupiter: Astronomy.Body.Jupiter,
-                saturn: Astronomy.Body.Saturn,
-                uranus: Astronomy.Body.Uranus,
-                neptune: Astronomy.Body.Neptune
-            };
-            const astroBody = bodyMap[planetName];
-            if (!astroBody) {
-                return calculatePlanetPositionLegacy(planetName, date, lat, lon);
-            }
-            const observer = new Astronomy.Observer(lat, lon, 0);
-            const equ = Astronomy.Equator(astroBody, date, observer, true, true);
-            const hor = Astronomy.Horizon(date, observer, equ.ra, equ.dec, 'normal');
-            const distAU = Astronomy.Distance(astroBody, date).au;
-            const magApprox = {
-                mercury: -0.5, venus: -4.5, mars: 0.5, jupiter: -2.5,
-                saturn: 0.5, uranus: 5.5, neptune: 7.8
-            }[planetName] || 0;
-            return {
-                azimuth: hor.azimuth,
-                altitude: hor.altitude,
-                magnitude: magApprox,
-                distance: distAU,
-                velocity: 0
-            };
+        
+        const APP_BUILD = '2026-11-16.2';
+        const calculationDiagnostics = {};
+        let calculationUtc = null;
+        function unavailablePosition(message, source) {
+            return { azimuth: NaN, altitude: NaN, magnitude: NaN, distance: NaN,
+                velocity: NaN, error: message, source };
         }
-
-        // Legacy-Fallback für Europa Clipper (NASA-Daten)
-        function calculatePlanetPositionLegacy(planetName, date, lat, lon) {
-            let position = { azimuth: 0, altitude: -90, magnitude: 0, distance: 0, velocity: 0 };
-            if (planetName === 'europa-clipper') {
-                const clipperPos = interpolateCoordinate(clipperCoordinates, date);
-                const earthPos = interpolateCoordinate(earthCoordinates, date);
-                if (!clipperPos || !earthPos) return position;
-                const dx = clipperPos.x - earthPos.x;
-                const dy = clipperPos.y - earthPos.y;
-                const dz = clipperPos.z - earthPos.z;
-                const distanceAU = Math.sqrt(dx*dx + dy*dy + dz*dz);
-                const eclipticLon = Math.atan2(dy, dx);
-                const eclipticLat = Math.asin(dz / distanceAU);
-                const obl = 23.43929 * Math.PI / 180;
-                const sinDec = Math.sin(eclipticLat) * Math.cos(obl) + Math.cos(eclipticLat) * Math.sin(obl) * Math.sin(eclipticLon);
-                const dec = Math.asin(sinDec);
-                const yRA = Math.sin(eclipticLon) * Math.cos(obl) - Math.tan(eclipticLat) * Math.sin(obl);
-                const xRA = Math.cos(eclipticLon);
-                const ra = Math.atan2(yRA, xRA) * 180 / Math.PI;
-                const raNorm = (ra + 360) % 360;
-                const jd = date.getTime() / 86400000 + 2440587.5;
-                const T = (jd - 2451545.0) / 36525;
-                const gmst0 = 280.46061837 + 360.98564736629 * (jd - 2451545.0) + 0.000387933 * T * T - T * T * T / 38710000;
-                const lst = (gmst0 + lon) % 360;
-                const ha = (lst - raNorm + 360) % 360;
-                const latRad = lat * Math.PI / 180;
-                const decRad = dec;
-                const haRad = ha * Math.PI / 180;
-                const altRad = Math.asin(Math.sin(latRad) * Math.sin(decRad) + Math.cos(latRad) * Math.cos(decRad) * Math.cos(haRad));
-                const azRad = Math.atan2(-Math.sin(haRad) * Math.cos(decRad), Math.cos(latRad) * Math.sin(decRad) - Math.sin(latRad) * Math.cos(decRad) * Math.cos(haRad));
-                position.azimuth = (azRad * 180 / Math.PI + 360) % 360;
-                position.altitude = altRad * 180 / Math.PI;
-                position.distance = distanceAU * 149597870.7;
-                position.magnitude = 15;
-                position.velocity = clipperPos.velocity !== undefined ? clipperPos.velocity : 0;
+        function calculatePlanetPositionAdvanced(planetName, date, lat, lon) {
+            const source = planetName === 'europa-clipper' ? 'coordinates.js / Clipper + Earth' : 'Astronomy Engine 2.1.19';
+            try {
+                if (!Number.isFinite(lat) || !Number.isFinite(lon)) throw new Error('GPS fehlt');
+                if (planetName === 'europa-clipper') {
+                    for (const series of [clipperCoordinates, earthCoordinates]) {
+                        if (!series.length) throw new Error('Ephemeriden fehlen');
+                        const first = new Date(series[0].date).getTime();
+                        const last = new Date(series[series.length - 1].date).getTime();
+                        if (!Number.isFinite(first) || !Number.isFinite(last) || date.getTime() < first || date.getTime() > last)
+                            throw new Error('Zeit ausserhalb der Ephemeridenabdeckung');
+                    }
+                    const result = calculatePlanetPositionLegacy(planetName, date, lat, lon);
+                    if (!Number.isFinite(result.altitude) || !Number.isFinite(result.azimuth)) throw new Error('Ungueltige Clipper-Position');
+                    calculationDiagnostics[planetName] = source;
+                    return { ...result, source };
+                }
+                if (typeof Astronomy === 'undefined') throw new Error('Astronomy Engine nicht geladen (Netz/CDN pruefen)');
+                const names = { mercury: 'Mercury', venus: 'Venus', mars: 'Mars', jupiter: 'Jupiter', saturn: 'Saturn', uranus: 'Uranus', neptune: 'Neptune' };
+                if (!names[planetName]) throw new Error('Unbekannter Planet');
+                const body = Astronomy.Body[names[planetName]];
+                const observer = new Astronomy.Observer(lat, lon, Number.isFinite(userLocation.height) ? userLocation.height : 0);
+                const equ = Astronomy.Equator(body, date, observer, true, true);
+                const hor = Astronomy.Horizon(date, observer, equ.ra, equ.dec, 'normal');
+                const light = Astronomy.Illumination(body, date);
+                if (![hor.azimuth, hor.altitude, light.geo_dist, light.mag].every(Number.isFinite)) throw new Error('Ungueltiges Berechnungsergebnis');
+                calculationDiagnostics[planetName] = source;
+                return { azimuth: hor.azimuth, altitude: hor.altitude, distance: light.geo_dist,
+                    magnitude: light.mag, velocity: NaN, ra: equ.ra, dec: equ.dec, source };
+            } catch (error) {
+                calculationDiagnostics[planetName] = source + ': ' + error.message;
+                return unavailablePosition(error.message, source);
             }
+        }
+        function refreshCalculationDiagnostics() {
+            const target = document.getElementById('calculation-diagnostics');
+            if (!target) return;
+            const pos = getCurrentCelestialPosition();
+            const fmt = value => Number.isFinite(value) ? value.toFixed(6) : 'nicht verfuegbar';
+            const seriesRange = series => series.length ? series[0].date + ' bis ' + series[series.length - 1].date : 'fehlt';
+            target.textContent = [
+                'Build: ' + APP_BUILD,
+                'UTC jetzt: ' + new Date().toISOString(),
+                'Berechnung UTC: ' + (calculationUtc || 'noch keine'),
+                'GPS Breite: ' + fmt(userLocation.lat) + ' / Laenge: ' + fmt(userLocation.lon),
+                'GPS Hoehe (m): ' + fmt(userLocation.height),
+                'GPS Genauigkeit (m): ' + fmt(userLocation.accuracy),
+                'Objekt: ' + currentCelestialBody,
+                'Quelle/Status: ' + (calculationDiagnostics[currentCelestialBody] || (['sun','moon'].includes(currentCelestialBody) ? 'SunCalc' : 'wartet auf Berechnung')),
+                'Azimut: ' + fmt(pos.azimuth) + ' Grad / Hoehe: ' + fmt(pos.altitude) + ' Grad',
+                'Planeten: topozentrisch, Refraktion normal; Entfernung geozentrisch in AE',
+                'Clipper: bisherige Vektorumrechnung; NICHT gegen Horizons validiert',
+                'Clipper-Daten: ' + seriesRange(clipperCoordinates),
+                'Erde-Daten: ' + seriesRange(earthCoordinates),
+                'SW: ' + (navigator.serviceWorker && navigator.serviceWorker.controller ? navigator.serviceWorker.controller.scriptURL : 'kein aktiver Controller'),
+                'Orientierung: ' + screenOrientation,
+                'Star Walk Referenz: 2026-11-16T19:41:06Z, Regensburg (Stadtnaeherung)',
+                'Saturn Referenz: Az 172.708694 Grad / Alt 41.636361 Grad',
+                'NASA/Star-Walk-Abgleich: noch NICHT bestaetigt'
+            ].join('\n');
+        }
+        document.addEventListener('DOMContentLoaded', () => {
+            refreshCalculationDiagnostics();
+            setInterval(refreshCalculationDiagnostics, 1000);
+        });
+
+        function calculatePlanetPositionLegacy(planetName, date, lat, lon) {
+            const daysSinceEpoch = (date - new Date(2000, 0, 1)) / 86400000;
+            const julianDay = 2451545.0 + daysSinceEpoch;
+            
+            let position = { azimuth: 0, altitude: 0, magnitude: 0, distance: 0, velocity: 0 };
+            
+            switch(planetName) {
+                case 'mercury':
+                    const mercuryL = (252.251 + 4.0923344368 * daysSinceEpoch) % 360;
+                    const mercuryEcc = 0.2056;
+                    const mercuryInc = 7.00;
+                    
+                    const mercuryEccentricAnomaly = mercuryL + mercuryEcc * Math.sin(mercuryL * Math.PI / 180) * 180 / Math.PI;
+                    const mercuryDistance = 0.387 * (1 - mercuryEcc * Math.cos(mercuryEccentricAnomaly * Math.PI / 180));
+                    
+                    const mercuryRA = (mercuryEccentricAnomaly + 90) % 360;
+                    const mercuryDec = Math.sin(mercuryInc * Math.PI / 180) * Math.sin(mercuryEccentricAnomaly * Math.PI / 180) * 25;
+                    
+                    const mercuryHA = (mercuryRA - (date.getHours() + date.getMinutes()/60) * 15 + lon) % 360;
+                    position.azimuth = (Math.atan2(Math.sin(mercuryHA * Math.PI / 180), 
+                        Math.cos(mercuryHA * Math.PI / 180) * Math.sin(lat * Math.PI / 180) - 
+                        Math.tan(mercuryDec * Math.PI / 180) * Math.cos(lat * Math.PI / 180)) * 180 / Math.PI + 360) % 360;
+                    position.altitude = Math.asin(Math.sin(lat * Math.PI / 180) * Math.sin(mercuryDec * Math.PI / 180) + 
+                        Math.cos(lat * Math.PI / 180) * Math.cos(mercuryDec * Math.PI / 180) * Math.cos(mercuryHA * Math.PI / 180)) * 180 / Math.PI;
+                    
+                    position.magnitude = -0.42 + 5 * Math.log10(mercuryDistance * Math.sqrt(mercuryDistance * mercuryDistance + 1 - 2 * mercuryDistance * Math.cos((mercuryL - 180) * Math.PI / 180)));
+                    position.distance = mercuryDistance;
+                    position.velocity = 47.9;
+                    break;
+                    
+                case 'venus':
+                    const venusL = (181.979 + 1.6021302244 * daysSinceEpoch) % 360;
+                    const venusEcc = 0.0067;
+                    const venusInc = 3.39;
+                    
+                    const venusEccentricAnomaly = venusL + venusEcc * Math.sin(venusL * Math.PI / 180) * 180 / Math.PI;
+                    const venusDistance = 0.723 * (1 - venusEcc * Math.cos(venusEccentricAnomaly * Math.PI / 180));
+                    
+                    const venusRA = (venusEccentricAnomaly + 90) % 360;
+                    const venusDec = Math.sin(venusInc * Math.PI / 180) * Math.sin(venusEccentricAnomaly * Math.PI / 180) * 25;
+                    
+                    const venusHA = (venusRA - (date.getHours() + date.getMinutes()/60) * 15 + lon) % 360;
+                    position.azimuth = (Math.atan2(Math.sin(venusHA * Math.PI / 180), 
+                        Math.cos(venusHA * Math.PI / 180) * Math.sin(lat * Math.PI / 180) - 
+                        Math.tan(venusDec * Math.PI / 180) * Math.cos(lat * Math.PI / 180)) * 180 / Math.PI + 360) % 360;
+                    position.altitude = Math.asin(Math.sin(lat * Math.PI / 180) * Math.sin(venusDec * Math.PI / 180) + 
+                        Math.cos(lat * Math.PI / 180) * Math.cos(venusDec * Math.PI / 180) * Math.cos(venusHA * Math.PI / 180)) * 180 / Math.PI;
+                    
+                    position.magnitude = -4.40 + 5 * Math.log10(venusDistance * Math.sqrt(venusDistance * venusDistance + 1 - 2 * venusDistance * Math.cos((venusL - 180) * Math.PI / 180)));
+                    position.distance = venusDistance;
+                    position.velocity = 35.0;
+                    break;
+                    
+                case 'mars':
+                    const marsL = (355.433 + 0.5240207766 * daysSinceEpoch) % 360;
+                    const marsEcc = 0.0934;
+                    const marsInc = 1.85;
+                    
+                    const marsEccentricAnomaly = marsL + marsEcc * Math.sin(marsL * Math.PI / 180) * 180 / Math.PI;
+                    const marsDistance = 1.524 * (1 - marsEcc * Math.cos(marsEccentricAnomaly * Math.PI / 180));
+                    
+                    const marsRA = (marsEccentricAnomaly + 90) % 360;
+                    const marsDec = Math.sin(marsInc * Math.PI / 180) * Math.sin(marsEccentricAnomaly * Math.PI / 180) * 25;
+                    
+                    const marsHA = (marsRA - (date.getHours() + date.getMinutes()/60) * 15 + lon) % 360;
+                    position.azimuth = (Math.atan2(Math.sin(marsHA * Math.PI / 180), 
+                        Math.cos(marsHA * Math.PI / 180) * Math.sin(lat * Math.PI / 180) - 
+                        Math.tan(marsDec * Math.PI / 180) * Math.cos(lat * Math.PI / 180)) * 180 / Math.PI + 360) % 360;
+                    position.altitude = Math.asin(Math.sin(lat * Math.PI / 180) * Math.sin(marsDec * Math.PI / 180) + 
+                        Math.cos(lat * Math.PI / 180) * Math.cos(marsDec * Math.PI / 180) * Math.cos(marsHA * Math.PI / 180)) * 180 / Math.PI;
+                    
+                    position.magnitude = -1.52 + 5 * Math.log10(marsDistance * Math.sqrt(marsDistance * marsDistance + 1 - 2 * marsDistance * Math.cos((marsL - 180) * Math.PI / 180)));
+                    position.distance = marsDistance;
+                    position.velocity = 24.1;
+                    break;
+                    
+                case 'jupiter':
+                    const jupiterL = (34.351 + 0.0830853001 * daysSinceEpoch) % 360;
+                    const jupiterDistance = 5.204;
+                    
+                    const jupiterRA = (jupiterL + 90) % 360;
+                    const jupiterDec = Math.sin(1.31 * Math.PI / 180) * Math.sin(jupiterL * Math.PI / 180) * 23;
+                    
+                    const jupiterHA = (jupiterRA - (date.getHours() + date.getMinutes()/60) * 15 + lon) % 360;
+                    position.azimuth = (Math.atan2(Math.sin(jupiterHA * Math.PI / 180), 
+                        Math.cos(jupiterHA * Math.PI / 180) * Math.sin(lat * Math.PI / 180) - 
+                        Math.tan(jupiterDec * Math.PI / 180) * Math.cos(lat * Math.PI / 180)) * 180 / Math.PI + 360) % 360;
+                    position.altitude = Math.asin(Math.sin(lat * Math.PI / 180) * Math.sin(jupiterDec * Math.PI / 180) + 
+                        Math.cos(lat * Math.PI / 180) * Math.cos(jupiterDec * Math.PI / 180) * Math.cos(jupiterHA * Math.PI / 180)) * 180 / Math.PI;
+                    
+                    position.magnitude = -9.4 + 5 * Math.log10(jupiterDistance * Math.sqrt(jupiterDistance * jupiterDistance + 1 - 2 * jupiterDistance * Math.cos((jupiterL - 180) * Math.PI / 180)));
+                    position.distance = jupiterDistance;
+                    position.velocity = 13.1;
+                    break;
+                    
+                case 'saturn':
+                    const saturnL = (50.077 + 0.0334442282 * daysSinceEpoch) % 360;
+                    const saturnDistance = 9.537;
+                    
+                    const saturnRA = (saturnL + 90) % 360;
+                    const saturnDec = Math.sin(2.49 * Math.PI / 180) * Math.sin(saturnL * Math.PI / 180) * 23;
+                    
+                    const saturnHA = (saturnRA - (date.getHours() + date.getMinutes()/60) * 15 + lon) % 360;
+                    position.azimuth = (Math.atan2(Math.sin(saturnHA * Math.PI / 180), 
+                        Math.cos(saturnHA * Math.PI / 180) * Math.sin(lat * Math.PI / 180) - 
+                        Math.tan(saturnDec * Math.PI / 180) * Math.cos(lat * Math.PI / 180)) * 180 / Math.PI + 360) % 360;
+                    position.altitude = Math.asin(Math.sin(lat * Math.PI / 180) * Math.sin(saturnDec * Math.PI / 180) + 
+                        Math.cos(lat * Math.PI / 180) * Math.cos(saturnDec * Math.PI / 180) * Math.cos(saturnHA * Math.PI / 180)) * 180 / Math.PI;
+                    
+                    position.magnitude = -8.88 + 5 * Math.log10(saturnDistance * Math.sqrt(saturnDistance * saturnDistance + 1 - 2 * saturnDistance * Math.cos((saturnL - 180) * Math.PI / 180)));
+                    position.distance = saturnDistance;
+                    position.velocity = 9.7;
+                    break;
+                    
+                case 'uranus':
+                    const uranusL = (314.055 + 0.0116771814 * daysSinceEpoch) % 360;
+                    const uranusDistance = 19.191;
+                    
+                    const uranusRA = (uranusL + 90) % 360;
+                    const uranusDec = Math.sin(0.77 * Math.PI / 180) * Math.sin(uranusL * Math.PI / 180) * 23;
+                    
+                    const uranusHA = (uranusRA - (date.getHours() + date.getMinutes()/60) * 15 + lon) % 360;
+                    position.azimuth = (Math.atan2(Math.sin(uranusHA * Math.PI / 180), 
+                        Math.cos(uranusHA * Math.PI / 180) * Math.sin(lat * Math.PI / 180) - 
+                        Math.tan(uranusDec * Math.PI / 180) * Math.cos(lat * Math.PI / 180)) * 180 / Math.PI + 360) % 360;
+                    position.altitude = Math.asin(Math.sin(lat * Math.PI / 180) * Math.sin(uranusDec * Math.PI / 180) + 
+                        Math.cos(lat * Math.PI / 180) * Math.cos(uranusDec * Math.PI / 180) * Math.cos(uranusHA * Math.PI / 180)) * 180 / Math.PI;
+                    
+                    position.magnitude = -7.19 + 5 * Math.log10(uranusDistance * Math.sqrt(uranusDistance * uranusDistance + 1 - 2 * uranusDistance * Math.cos((uranusL - 180) * Math.PI / 180)));
+                    position.distance = uranusDistance;
+                    position.velocity = 6.8;
+                    break;
+                    
+                case 'neptune':
+                    const neptuneL = (304.348 + 0.0060190130 * daysSinceEpoch) % 360;
+                    const neptuneDistance = 30.069;
+                    
+                    const neptuneRA = (neptuneL + 90) % 360;
+                    const neptuneDec = Math.sin(1.77 * Math.PI / 180) * Math.sin(neptuneL * Math.PI / 180) * 23;
+                    
+                    const neptuneHA = (neptuneRA - (date.getHours() + date.getMinutes()/60) * 15 + lon) % 360;
+                    position.azimuth = (Math.atan2(Math.sin(neptuneHA * Math.PI / 180), 
+                        Math.cos(neptuneHA * Math.PI / 180) * Math.sin(lat * Math.PI / 180) - 
+                        Math.tan(neptuneDec * Math.PI / 180) * Math.cos(lat * Math.PI / 180)) * 180 / Math.PI + 360) % 360;
+                    position.altitude = Math.asin(Math.sin(lat * Math.PI / 180) * Math.sin(neptuneDec * Math.PI / 180) + 
+                        Math.cos(lat * Math.PI / 180) * Math.cos(neptuneDec * Math.PI / 180) * Math.cos(neptuneHA * Math.PI / 180)) * 180 / Math.PI;
+                    
+                    position.magnitude = -6.87 + 5 * Math.log10(neptuneDistance * Math.sqrt(neptuneDistance * neptuneDistance + 1 - 2 * neptuneDistance * Math.cos((neptuneL - 180) * Math.PI / 180)));
+                    position.distance = neptuneDistance;
+                    position.velocity = 5.4;
+                    break;
+                    
+                case 'europa-clipper':
+                    // **ECHTE NASA-DATEN**
+                    const clipperPos = interpolateCoordinate(clipperCoordinates, date);
+                    const earthPos = interpolateCoordinate(earthCoordinates, date);
+
+                    if (!clipperPos || !earthPos) {
+                        position.azimuth = 0;
+                        position.altitude = -90; // Versteckt, bis Daten da sind
+                        position.distance = 0;
+                        position.magnitude = 0;
+                        position.velocity = 0;
+                        break;
+                    }
+
+                    const dx = clipperPos.x - earthPos.x;
+                    const dy = clipperPos.y - earthPos.y;
+                    const dz = clipperPos.z - earthPos.z;
+
+                    const distanceAU = Math.sqrt(dx*dx + dy*dy + dz*dz);
+
+                    const eclipticLon = Math.atan2(dy, dx);
+                    const eclipticLat = Math.asin(dz / distanceAU);
+                    const obl = 23.43929 * Math.PI / 180;
+
+                    const sinDec = Math.sin(eclipticLat) * Math.cos(obl) + Math.cos(eclipticLat) * Math.sin(obl) * Math.sin(eclipticLon);
+                    const dec = Math.asin(sinDec);
+                    const decDeg = dec * 180 / Math.PI;
+
+                    const yRA = Math.sin(eclipticLon) * Math.cos(obl) - Math.tan(eclipticLat) * Math.sin(obl);
+                    const xRA = Math.cos(eclipticLon);
+                    const ra = (Math.atan2(yRA, xRA) * 180 / Math.PI + 360) % 360;
+
+                    const jd = (date.getTime() / 86400000) + 2440587.5;
+                    const T = (jd - 2451545.0) / 36525;
+                    const gmst0 = 280.46061837 + 360.98564736629 * (jd - 2451545.0) + 0.000387933 * T * T - T * T * T / 38710000;
+                    const lst = (gmst0 + lon) % 360;
+
+                    const ha = (lst - ra + 360) % 360;
+
+                    const latRad = lat * Math.PI / 180;
+                    const decRad = dec;
+                    const haRad = ha * Math.PI / 180;
+
+                    const altRad = Math.asin(Math.sin(latRad) * Math.sin(decRad) + Math.cos(latRad) * Math.cos(decRad) * Math.cos(haRad));
+                    const azRad = Math.atan2(-Math.sin(haRad) * Math.cos(decRad), Math.cos(latRad) * Math.sin(decRad) - Math.sin(latRad) * Math.cos(decRad) * Math.cos(haRad));
+
+                    position.azimuth = (azRad * 180 / Math.PI + 360) % 360;
+                    position.altitude = altRad * 180 / Math.PI;
+                    position.distance = distanceAU * 149597870.7; // In km statt AU für UI
+                    position.magnitude = 15; // Sehr dunkel
+                    position.velocity = clipperPos.velocity !== undefined ? clipperPos.velocity : 0;
+                    
+                    break;
+            }
+            
             return position;
         }
 
@@ -1900,7 +2116,8 @@ setInterval(() => {
         }
 
         async function updateRealtimeCelestialPositions() {
-            if (!userLocation.lat || !userLocation.lon) return;
+            calculationUtc = new Date().toISOString();
+            if (!Number.isFinite(userLocation.lat) || !Number.isFinite(userLocation.lon)) return;
             
             const now = new Date();
             
@@ -1934,6 +2151,8 @@ setInterval(() => {
             }
             
             updateRealtimeInfo(now, sunTimes, moonTimes, moonIllumination);
+            lastRenderState.body = null;
+            refreshCalculationDiagnostics();
             scheduleSensorVisualUpdate();
         }
 
@@ -2914,6 +3133,8 @@ setInterval(() => {
                     position => {
                         userLocation.lat = position.coords.latitude;
                         userLocation.lon = position.coords.longitude;
+                    userLocation.height = position.coords.altitude;
+                    userLocation.accuracy = position.coords.accuracy;
                         updateRealtimeCelestialPositions();
                         // Reverse-Geocoding: Stadt anzeigen
                         fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${userLocation.lat}&lon=${userLocation.lon}&zoom=10&addressdetails=1`)
