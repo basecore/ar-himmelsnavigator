@@ -4,7 +4,10 @@
 GUI mode:
     python Clipper_Downloader.py
 
-Automatic Clipper update:
+Regenerate the complete coordinates.js:
+    python Clipper_Downloader.py --regenerate-all --output coordinates.js
+
+Update only the Europa Clipper entry:
     python Clipper_Downloader.py --update-clipper --output coordinates.js
 """
 
@@ -22,6 +25,14 @@ from tkinter import ttk, filedialog, scrolledtext
 HORIZONS_API = "https://ssd.jpl.nasa.gov/api/horizons.api"
 CLIPPER_COMMAND = "'-159'"
 DEFAULT_OUTPUT = "coordinates.js"
+
+BODIES = [
+    {"id": "'399'", "key": "Earth", "color": "#4169E1", "size": 6},
+    {"id": "'499'", "key": "Mars", "color": "#FF4500", "size": 5},
+    {"id": "'599'", "key": "Jupiter", "color": "#FFD700", "size": 12},
+    {"id": "'502'", "key": "Europa", "color": "#FFFFFF", "size": 3},
+    {"id": CLIPPER_COMMAND, "key": "Clipper", "color": "#64ffff", "size": 4},
+]
 
 
 def log(message):
@@ -114,7 +125,7 @@ def fetch_horizons_vectors(command, start, stop, step, name, log_callback=log):
     raise RuntimeError(f"Datenabruf für {name} endgültig fehlgeschlagen: {last_error}")
 
 
-def build_clipper_block(coordinates):
+def build_body_block(key, color, size, coordinates):
     entries = []
     for point in coordinates:
         entries.append(
@@ -127,12 +138,56 @@ def build_clipper_block(coordinates):
         )
 
     return (
-        "  'Clipper': {\n"
-        "    color: '#64ffff', size: 4,\n"
+        "  '" + key + "': {\n"
+        "    color: '" + color + "', size: " + str(size) + ",\n"
         "    coordinates: [\n"
         + ",\n".join(entries)
         + "\n    ]\n  },\n"
     )
+
+
+def write_text_atomically(path, content):
+    directory = os.path.dirname(os.path.abspath(path)) or "."
+    descriptor, temporary_path = tempfile.mkstemp(
+        dir=directory, prefix=".coordinates-", suffix=".js"
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as file:
+            file.write(content)
+        os.replace(temporary_path, path)
+    except Exception:
+        if os.path.exists(temporary_path):
+            os.unlink(temporary_path)
+        raise
+
+
+def regenerate_all(output, start, stop, step):
+    js_output = "const bodies = {\n"
+    js_output += (
+        "  'Sun': { color: '#FFD700', size: 15, x: 0, y: 0, z: 0, velocity: 0 },\n"
+    )
+
+    for body in BODIES:
+        data = fetch_horizons_vectors(
+            body["id"], start, stop, step, body["key"]
+        )
+        js_output += build_body_block(
+            body["key"], body["color"], body["size"], data
+        )
+
+    js_output = js_output.rstrip(",\n") + "\n};\n"
+
+    for required in ("'Earth'", "'Mars'", "'Jupiter'", "'Europa'", "'Clipper'"):
+        if required not in js_output:
+            raise ValueError(f"Regenerierte coordinates.js enthält {required} nicht.")
+
+    write_text_atomically(output, js_output)
+    log(f"coordinates.js vollständig regeneriert: {output}")
+    log(f"Zeitraum: {start} bis {stop}, Schrittweite: {step}")
+
+
+def build_clipper_block(coordinates):
+    return build_body_block("Clipper", "#64ffff", 4, coordinates)
 
 
 def replace_clipper_in_coordinates_js(path, coordinates):
@@ -156,18 +211,7 @@ def replace_clipper_in_coordinates_js(path, coordinates):
     if "'Clipper'" not in updated:
         raise ValueError("Clipper-Eintrag fehlt nach der Aktualisierung.")
 
-    directory = os.path.dirname(os.path.abspath(path)) or "."
-    descriptor, temporary_path = tempfile.mkstemp(
-        dir=directory, prefix=".coordinates-", suffix=".js"
-    )
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as file:
-            file.write(updated)
-        os.replace(temporary_path, path)
-    except Exception:
-        if os.path.exists(temporary_path):
-            os.unlink(temporary_path)
-        raise
+    write_text_atomically(path, updated)
 
 
 def update_clipper(output, days_back, days_ahead, step):
@@ -251,49 +295,25 @@ class HorizonsApp:
         threading.Thread(target=self.download_worker, daemon=True).start()
 
     def download_worker(self):
-        bodies = [
-            {"id": "'399'", "key": "Earth", "color": "#4169E1", "size": 6},
-            {"id": "'499'", "key": "Mars", "color": "#FF4500", "size": 5},
-            {"id": "'599'", "key": "Jupiter", "color": "#FFD700", "size": 12},
-            {"id": "'502'", "key": "Europa", "color": "#FFFFFF", "size": 3},
-            {"id": CLIPPER_COMMAND, "key": "Clipper", "color": "#64ffff", "size": 4},
-        ]
-
-        self.progress["maximum"] = len(bodies)
+        self.progress["maximum"] = len(BODIES)
         js_output = "const bodies = {\n"
-        js_output += "  'Sun': { color: '#FFD700', size: 15, x: 0, y: 0, z: 0, velocity: 0 },\n"
+        js_output += (
+            "  'Sun': { color: '#FFD700', size: 15, x: 0, y: 0, z: 0, velocity: 0 },\n"
+        )
 
-        for index, body in enumerate(bodies):
+        for index, body in enumerate(BODIES):
             data = fetch_horizons_vectors(
                 body["id"], self.start_var.get(), self.stop_var.get(),
                 self.step_var.get(), body["key"], self.log_message,
             )
-
             if data:
-                js_output += (
-                    "  '" + body["key"] + "': {\n"
-                    "    color: '" + body["color"] + "', size: " + str(body["size"]) + ",\n"
-                    "    coordinates: [\n"
+                js_output += build_body_block(
+                    body["key"], body["color"], body["size"], data
                 )
-                lines = []
-                for point in data:
-                    lines.append(
-                        '      { date: new Date("' + point["date"] + '"), '
-                        + "x: " + format(point["x"], ".8f")
-                        + ", y: " + format(point["y"], ".8f")
-                        + ", z: " + format(point["z"], ".8f")
-                        + ", velocity: " + format(point["velocity"], ".4f")
-                        + " }"
-                    )
-                js_output += ",\n".join(lines)
-                js_output += "\n    ]\n  },\n"
-
             self.root.after(0, self.update_progress, index + 1)
 
         js_output = js_output.rstrip(",\n") + "\n};\n"
-        with open(self.path_var.get(), "w", encoding="utf-8") as file:
-            file.write(js_output)
-
+        write_text_atomically(self.path_var.get(), js_output)
         self.log_message(f"ERFOLG: Datei gespeichert unter {self.path_var.get()}")
         self.root.after(0, lambda: self.progress.config(value=0))
 
@@ -303,20 +323,38 @@ class HorizonsApp:
 
 def parse_arguments():
     parser = argparse.ArgumentParser(
-        description="Aktualisiert Europa Clipper in coordinates.js über JPL Horizons."
+        description="Erzeugt oder aktualisiert coordinates.js über JPL Horizons."
     )
-    parser.add_argument("--update-clipper", action="store_true", help="Aktualisiert nur den Clipper-Eintrag in coordinates.js.")
+    parser.add_argument(
+        "--regenerate-all",
+        action="store_true",
+        help="Regeneriert die komplette coordinates.js für alle unterstützten Körper.",
+    )
+    parser.add_argument(
+        "--update-clipper",
+        action="store_true",
+        help="Aktualisiert nur den Clipper-Eintrag in coordinates.js.",
+    )
     parser.add_argument("--output", default=DEFAULT_OUTPUT, help="Pfad zur coordinates.js.")
-    parser.add_argument("--days-back", type=int, default=1, help="Tage vor heute.")
-    parser.add_argument("--days-ahead", type=int, default=400, help="Tage nach heute.")
+    parser.add_argument("--start", default="2024-10-15", help="Startdatum für --regenerate-all.")
+    parser.add_argument("--stop", default="2034-12-31", help="Enddatum für --regenerate-all.")
     parser.add_argument("--step", default="1 d", help="Horizons-Schrittweite.")
+    parser.add_argument("--days-back", type=int, default=1, help="Tage vor heute für --update-clipper.")
+    parser.add_argument("--days-ahead", type=int, default=400, help="Tage nach heute für --update-clipper.")
     return parser.parse_args()
 
 
 def main():
     arguments = parse_arguments()
+
+    if arguments.regenerate_all:
+        regenerate_all(arguments.output, arguments.start, arguments.stop, arguments.step)
+        return
+
     if arguments.update_clipper:
-        update_clipper(arguments.output, arguments.days_back, arguments.days_ahead, arguments.step)
+        update_clipper(
+            arguments.output, arguments.days_back, arguments.days_ahead, arguments.step
+        )
         return
 
     root = tk.Tk()
