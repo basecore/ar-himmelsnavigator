@@ -778,6 +778,10 @@
                 <span class="sensor-label">Genauigkeit:</span>
                 <span class="sensor-value" id="sensor-accuracy">--</span>
             </div>
+            <div class="sensor-row">
+                <span class="sensor-label">Ort:</span>
+                <span class="sensor-value" id="sensor-location">--</span>
+            </div>
         </div>
     </div>
 
@@ -1130,6 +1134,7 @@
             sensorAzimuthDiff: null,
             sensorPitchDiff: null,
             sensorAccuracy: null,
+            sensorLocation: null,
             celestialInView: null
         };
 
@@ -1178,6 +1183,7 @@
             dom.sensorAzimuthDiff = document.getElementById('sensor-azimuth-diff');
             dom.sensorPitchDiff = document.getElementById('sensor-pitch-diff');
             dom.sensorAccuracy = document.getElementById('sensor-accuracy');
+        dom.sensorLocation = document.getElementById('sensor-location');
             dom.celestialInView = document.getElementById('celestial-in-view');
         }
 
@@ -3048,6 +3054,16 @@ setInterval(() => {
                         userLocation.lat = position.coords.latitude;
                         userLocation.lon = position.coords.longitude;
                         updateRealtimeCelestialPositions();
+                        // Reverse-Geocoding: Stadt anzeigen
+                        fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${userLocation.lat}&lon=${userLocation.lon}&zoom=10&addressdetails=1`)
+                            .then(r => r.json())
+                            .then(data => {
+                                const city = data.address && (data.address.city || data.address.town || data.address.village || data.address.municipality || data.address.county);
+                                if (dom.sensorLocation && city) {
+                                    dom.sensorLocation.textContent = city;
+                                }
+                            })
+                            .catch(err => console.error('Reverse-Geocoding fehlgeschlagen:', err));
                     },
                     error => {
                         console.error('Standort-Zugriff fehlgeschlagen:', error);
