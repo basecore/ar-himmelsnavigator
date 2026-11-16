@@ -1,103 +1,188 @@
-import urllib.request
-import urllib.parse
+#!/usr/bin/env python3
+"""NASA Horizons downloader for the AR Himmelsnavigator.
+
+GUI mode:
+    python Clipper_Downloader.py
+
+Automatic Clipper update:
+    python Clipper_Downloader.py --update-clipper --output coordinates.js
+"""
+
+import argparse
+import os
 import re
-import ssl
+import tempfile
 import threading
 import tkinter as tk
+import urllib.parse
+import urllib.request
+from datetime import datetime, timedelta, timezone
 from tkinter import ttk, filedialog, scrolledtext
-from datetime import datetime
+
+HORIZONS_API = "https://ssd.jpl.nasa.gov/api/horizons.api"
+CLIPPER_COMMAND = "'-159'"
+DEFAULT_OUTPUT = "coordinates.js"
 
 
-# ==========================================
-# NASA Horizons API Funktion
-# ==========================================
-def fetch_horizons(command, start, stop, step, name, log_callback):
-    url = "https://ssd.jpl.nasa.gov/api/horizons.api"
+def log(message):
+    print(message, flush=True)
+
+
+def fetch_horizons_vectors(command, start, stop, step, name, log_callback=log):
     params = {
         "format": "text",
         "COMMAND": command,
-        "CENTER": "'@10'",  # Zentrum: Sonne
+        "CENTER": "'@10'",
         "MAKE_EPHEM": "'YES'",
         "EPHEM_TYPE": "'VECTORS'",
         "START_TIME": f"'{start}'",
         "STOP_TIME": f"'{stop}'",
         "STEP_SIZE": f"'{step}'",
-        "OUT_UNITS": "'AU-D'",  # Distanz in AU, Zeit in Tagen
-        "CSV_FORMAT": "'YES'"
+        "OUT_UNITS": "'AU-D'",
+        "CSV_FORMAT": "'YES'",
     }
+    full_url = f"{HORIZONS_API}?{urllib.parse.urlencode(params)}"
+    log_callback(f"Lade {name} von NASA Horizons: {start} bis {stop}, Schritt {step}")
 
-    query_string = urllib.parse.urlencode(params)
-    full_url = f"{url}?{query_string}"
+    last_error = None
+    for attempt in range(1, 4):
+        try:
+            request = urllib.request.Request(
+                full_url,
+                headers={"User-Agent": "ar-himmelsnavigator/1.0"},
+            )
+            with urllib.request.urlopen(request, timeout=60) as response:
+                text = response.read().decode("utf-8")
 
-    log_callback(f"Lade Daten für {name} von NASA Horizons... (bis {stop})")
-
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-
-    try:
-        req = urllib.request.Request(full_url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, context=ctx) as response:
-            text = response.read().decode('utf-8')
-            match = re.search(r'\$\$SOE(.*?)\$\$EOE', text, re.DOTALL)
-
+            match = re.search(r"\$\$SOE(.*?)\$\$EOE", text, re.DOTALL)
             if not match:
-                # Automatischer Fallback: Suche in der API-Antwort nach dem maximal möglichen Datum
-                err_match = re.search(r'No ephemeris for target "(.*?)" after A\.D\. (\d{4}-[A-Z]{3}-\d{2})', text)
-                if err_match:
-                    new_date_str = err_match.group(2)
-                    try:
-                        # Datum umwandeln in YYYY-MM-DD
-                        new_date = datetime.strptime(new_date_str.title(), "%Y-%b-%d").strftime("%Y-%m-%d")
-                        log_callback(f"  -> INFO: Die Mission von {name} endet offiziell am {new_date}.")
-                        log_callback(f"  -> FALLBACK: Lade {name} erneut bis zum {new_date}...")
+                error_match = re.search(
+                    r"No ephemeris for target \"(.*?)\" after A\.D\. (\d{4}-[A-Z]{3}-\d{2})",
+                    text,
+                )
+                if error_match:
+                    mission_end = datetime.strptime(
+                        error_match.group(2).title(), "%Y-%b-%d"
+                    ).strftime("%Y-%m-%d")
+                    log_callback(
+                        f"Mission {name} endet laut Horizons am {mission_end}; "
+                        "begrenze den Abruf entsprechend."
+                    )
+                    return fetch_horizons_vectors(
+                        command, start, mission_end, step, name, log_callback
+                    )
 
-                        # Starte den Download für diesen Körper neu, mit dem korrigierten Datum
-                        return fetch_horizons(command, start, new_date, step, name, log_callback)
-                    except Exception as e:
-                        log_callback(f"  -> Fehler beim Parsen des Datums: {e}")
-                else:
-                    log_callback(f"  -> FEHLER: Konnte keine Daten für {name} finden.")
-                    # Zeige die letzten 250 Zeichen der Antwort zum Debuggen
-                    log_callback(f"  -> API Antwort (Ende): {text[-250:].strip()}")
-                return []
+                raise ValueError(
+                    "Keine Ephemeriden-Daten in der Horizons-Antwort gefunden. "
+                    f"Antwortende: {text[-300:]}"
+                )
 
-            lines = match.group(1).strip().split('\n')
-            coords = []
+            coordinates = []
+            for line in match.group(1).strip().splitlines():
+                parts = [part.strip() for part in line.split(",")]
+                if len(parts) < 8:
+                    continue
 
-            for line in lines:
-                parts = [p.strip() for p in line.split(',')]
-                if len(parts) >= 8:
-                    date_str = parts[1].replace('A.D. ', '').replace('TDB', '').strip()
+                date_text = parts[1].replace("A.D. ", "").replace("TDB", "").strip()
+                try:
+                    parsed_date = datetime.strptime(date_text, "%Y-%b-%d %H:%M:%S.%f")
+                except ValueError:
+                    parsed_date = datetime.strptime(date_text, "%Y-%b-%d %H:%M:%S")
 
-                    x, y, z = float(parts[2]), float(parts[3]), float(parts[4])
-                    vx, vy, vz = float(parts[5]), float(parts[6]), float(parts[7])
+                x, y, z = float(parts[2]), float(parts[3]), float(parts[4])
+                vx, vy, vz = float(parts[5]), float(parts[6]), float(parts[7])
+                velocity_kms = ((vx ** 2 + vy ** 2 + vz ** 2) ** 0.5) * 1731.4568
 
-                    # Geschwindigkeit berechnen (km/s)
-                    velocity_kms = (vx ** 2 + vy ** 2 + vz ** 2) ** 0.5 * 1731.4568
+                coordinates.append({
+                    "date": parsed_date.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                    "x": x,
+                    "y": y,
+                    "z": z,
+                    "velocity": velocity_kms,
+                })
 
-                    try:
-                        dt = datetime.strptime(date_str, "%Y-%b-%d %H:%M:%S.%f")
-                    except ValueError:
-                        dt = datetime.strptime(date_str, "%Y-%b-%d %H:%M:%S")
+            if not coordinates:
+                raise ValueError("Horizons lieferte keine verwertbaren Datenzeilen.")
 
-                    iso_date = dt.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+            log_callback(f"{len(coordinates)} Datenpunkte für {name} geladen.")
+            return coordinates
 
-                    coords.append({
-                        "date": iso_date, "x": x, "y": y, "z": z, "velocity": velocity_kms
-                    })
+        except Exception as error:
+            last_error = error
+            log_callback(f"Versuch {attempt}/3 für {name} fehlgeschlagen: {error}")
 
-            log_callback(f"  -> {len(coords)} Datenpunkte für {name} erfolgreich geladen.")
-            return coords
-
-    except Exception as e:
-        log_callback(f"  -> Fehlschlag bei {name}: {e}")
-        return []
+    raise RuntimeError(f"Datenabruf für {name} endgültig fehlgeschlagen: {last_error}")
 
 
-# ==========================================
-# GUI Anwendung
-# ==========================================
+def build_clipper_block(coordinates):
+    entries = []
+    for point in coordinates:
+        entries.append(
+            '      { date: new Date("' + point["date"] + '"), '
+            + "x: " + format(point["x"], ".8f")
+            + ", y: " + format(point["y"], ".8f")
+            + ", z: " + format(point["z"], ".8f")
+            + ", velocity: " + format(point["velocity"], ".4f")
+            + " }"
+        )
+
+    return (
+        "  'Clipper': {\n"
+        "    color: '#64ffff', size: 4,\n"
+        "    coordinates: [\n"
+        + ",\n".join(entries)
+        + "\n    ]\n  },\n"
+    )
+
+
+def replace_clipper_in_coordinates_js(path, coordinates):
+    with open(path, "r", encoding="utf-8") as file:
+        content = file.read()
+
+    clipper_block = build_clipper_block(coordinates)
+    pattern = re.compile(r"(?ms)^  'Clipper':\s*\{.*?^  \},\s*$")
+
+    if pattern.search(content):
+        updated = pattern.sub(clipper_block.rstrip("\n") + "\n", content, count=1)
+    else:
+        closing = content.rstrip()
+        if not closing.endswith("};"):
+            raise ValueError(
+                "coordinates.js hat ein unerwartetes Format; "
+                "Clipper-Eintrag kann nicht sicher eingefügt werden."
+            )
+        updated = closing[:-2].rstrip() + "\n\n" + clipper_block + "};\n"
+
+    if "'Clipper'" not in updated:
+        raise ValueError("Clipper-Eintrag fehlt nach der Aktualisierung.")
+
+    directory = os.path.dirname(os.path.abspath(path)) or "."
+    descriptor, temporary_path = tempfile.mkstemp(
+        dir=directory, prefix=".coordinates-", suffix=".js"
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as file:
+            file.write(updated)
+        os.replace(temporary_path, path)
+    except Exception:
+        if os.path.exists(temporary_path):
+            os.unlink(temporary_path)
+        raise
+
+
+def update_clipper(output, days_back, days_ahead, step):
+    now = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    start = (now - timedelta(days=days_back)).strftime("%Y-%m-%d")
+    stop = (now + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+
+    coordinates = fetch_horizons_vectors(
+        CLIPPER_COMMAND, start, stop, step, "Europa Clipper"
+    )
+    replace_clipper_in_coordinates_js(output, coordinates)
+    log(f"coordinates.js aktualisiert: {output}")
+    log(f"Zeitraum: {start} bis {stop}, Schrittweite: {step}")
+
+
 class HorizonsApp:
     def __init__(self, root):
         self.root = root
@@ -108,8 +193,7 @@ class HorizonsApp:
         self.start_var = tk.StringVar(value="2024-10-15")
         self.stop_var = tk.StringVar(value="2034-12-31")
         self.step_var = tk.StringVar(value="1 d")
-        self.path_var = tk.StringVar(value="coordinates.js")
-
+        self.path_var = tk.StringVar(value=DEFAULT_OUTPUT)
         self.setup_ui()
 
     def setup_ui(self):
@@ -118,10 +202,8 @@ class HorizonsApp:
 
         ttk.Label(config_frame, text="Start-Datum:").grid(row=0, column=0, sticky=tk.W, pady=5)
         ttk.Entry(config_frame, textvariable=self.start_var, width=15).grid(row=0, column=1, sticky=tk.W, pady=5)
-
         ttk.Label(config_frame, text="End-Datum:").grid(row=0, column=2, sticky=tk.W, padx=(20, 0), pady=5)
         ttk.Entry(config_frame, textvariable=self.stop_var, width=15).grid(row=0, column=3, sticky=tk.W, pady=5)
-
         ttk.Label(config_frame, text="Schrittweite (Step):").grid(row=1, column=0, sticky=tk.W, pady=5)
         ttk.Entry(config_frame, textvariable=self.step_var, width=15).grid(row=1, column=1, sticky=tk.W, pady=5)
 
@@ -133,26 +215,25 @@ class HorizonsApp:
 
         action_frame = ttk.Frame(self.root)
         action_frame.pack(fill=tk.X, pady=(0, 10))
-        self.btn_start = ttk.Button(action_frame, text="🚀 Download Starten", command=self.start_download)
-        self.btn_start.pack(side=tk.LEFT)
-
-        self.progress = ttk.Progressbar(action_frame, orient=tk.HORIZONTAL, length=400, mode='determinate')
+        ttk.Button(action_frame, text="🚀 Download Starten", command=self.start_download).pack(side=tk.LEFT)
+        self.progress = ttk.Progressbar(action_frame, orient=tk.HORIZONTAL, length=400, mode="determinate")
         self.progress.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(10, 0))
 
         log_frame = ttk.LabelFrame(self.root, text="Log & Debugging", padding=10)
         log_frame.pack(fill=tk.BOTH, expand=True)
-        self.console = scrolledtext.ScrolledText(log_frame, wrap=tk.WORD, height=15, state='disabled', bg="#1e1e1e",
-                                                 fg="#00ff00", font=("Consolas", 9))
+        self.console = scrolledtext.ScrolledText(
+            log_frame, wrap=tk.WORD, height=15, state="disabled", bg="#1e1e1e",
+            fg="#00ff00", font=("Consolas", 9),
+        )
         self.console.pack(fill=tk.BOTH, expand=True)
-
         self.log_message("System bereit. Einstellungen prüfen und Download starten.")
 
     def browse_file(self):
         filename = filedialog.asksaveasfilename(
             defaultextension=".js",
             filetypes=[("JavaScript Files", "*.js"), ("All Files", "*.*")],
-            initialfile="coordinates.js",
-            title="Speicherort auswählen"
+            initialfile=DEFAULT_OUTPUT,
+            title="Speicherort auswählen",
         )
         if filename:
             self.path_var.set(filename)
@@ -161,72 +242,87 @@ class HorizonsApp:
         self.root.after(0, self._append_log, message)
 
     def _append_log(self, message):
-        self.console.config(state='normal')
+        self.console.config(state="normal")
         self.console.insert(tk.END, message + "\n")
         self.console.see(tk.END)
-        self.console.config(state='disabled')
+        self.console.config(state="disabled")
 
     def start_download(self):
-        self.btn_start.config(state='disabled')
-        self.progress['value'] = 0
-        self.console.config(state='normal')
-        self.console.delete('1.0', tk.END)
-        self.console.config(state='disabled')
-
-        self.log_message(f"=== STARTE NEUEN DOWNLOAD ===")
-        self.log_message(f"Zeitraum: {self.start_var.get()} bis {self.stop_var.get()}")
         threading.Thread(target=self.download_worker, daemon=True).start()
 
     def download_worker(self):
-        start = self.start_var.get()
-        stop = self.stop_var.get()
-        step = self.step_var.get()
-        save_path = self.path_var.get()
-
-        # Das Semikolon erzwingt Spacecraft!
-        bodies_to_fetch = [
+        bodies = [
             {"id": "'399'", "key": "Earth", "color": "#4169E1", "size": 6},
             {"id": "'499'", "key": "Mars", "color": "#FF4500", "size": 5},
             {"id": "'599'", "key": "Jupiter", "color": "#FFD700", "size": 12},
             {"id": "'502'", "key": "Europa", "color": "#FFFFFF", "size": 3},
-            # WICHTIG: -159 in einfachen Anführungszeichen, OHNE Semikolon!
-            {"id": "'-159'", "key": "Clipper", "color": "#64ffff", "size": 4}
+            {"id": CLIPPER_COMMAND, "key": "Clipper", "color": "#64ffff", "size": 4},
         ]
 
-        self.progress['maximum'] = len(bodies_to_fetch)
+        self.progress["maximum"] = len(bodies)
+        js_output = "const bodies = {\n"
+        js_output += "  'Sun': { color: '#FFD700', size: 15, x: 0, y: 0, z: 0, velocity: 0 },\n"
 
-        js_out = "const bodies = {\n"
-        js_out += "  'Sun': { color: '#FFD700', size: 15, x: 0, y: 0, z: 0, velocity: 0 },\n"
-
-        for idx, body in enumerate(bodies_to_fetch):
-            data = fetch_horizons(body["id"], start, stop, step, body["key"], self.log_message)
+        for index, body in enumerate(bodies):
+            data = fetch_horizons_vectors(
+                body["id"], self.start_var.get(), self.stop_var.get(),
+                self.step_var.get(), body["key"], self.log_message,
+            )
 
             if data:
-                js_out += f"  '{body['key']}': {{\n    color: '{body['color']}', size: {body['size']},\n    coordinates: [\n"
-                lines = [
-                    f"      {{ date: new Date(\"{c['date']}\"), x: {c['x']:.8f}, y: {c['y']:.8f}, z: {c['z']:.8f}, velocity: {c['velocity']:.4f} }}"
-                    for c in data]
-                js_out += ",\n".join(lines)
-                js_out += "\n    ]\n  },\n"
+                js_output += (
+                    "  '" + body["key"] + "': {\n"
+                    "    color: '" + body["color"] + "', size: " + str(body["size"]) + ",\n"
+                    "    coordinates: [\n"
+                )
+                lines = []
+                for point in data:
+                    lines.append(
+                        '      { date: new Date("' + point["date"] + '"), '
+                        + "x: " + format(point["x"], ".8f")
+                        + ", y: " + format(point["y"], ".8f")
+                        + ", z: " + format(point["z"], ".8f")
+                        + ", velocity: " + format(point["velocity"], ".4f")
+                        + " }"
+                    )
+                js_output += ",\n".join(lines)
+                js_output += "\n    ]\n  },\n"
 
-            self.root.after(0, self.update_progress, idx + 1)
+            self.root.after(0, self.update_progress, index + 1)
 
-        js_out = js_out.rstrip(",\n") + "\n};\n"
+        js_output = js_output.rstrip(",\n") + "\n};\n"
+        with open(self.path_var.get(), "w", encoding="utf-8") as file:
+            file.write(js_output)
 
-        try:
-            with open(save_path, "w", encoding="utf-8") as f:
-                f.write(js_out)
-            self.log_message(f"\nERFOLG: Datei wurde gespeichert unter:\n{save_path}")
-        except Exception as e:
-            self.log_message(f"\nFEHLER beim Speichern: {e}")
+        self.log_message(f"ERFOLG: Datei gespeichert unter {self.path_var.get()}")
+        self.root.after(0, lambda: self.progress.config(value=0))
 
-        self.root.after(0, lambda: self.btn_start.config(state='normal'))
+    def update_progress(self, value):
+        self.progress["value"] = value
 
-    def update_progress(self, val):
-        self.progress['value'] = val
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(
+        description="Aktualisiert Europa Clipper in coordinates.js über JPL Horizons."
+    )
+    parser.add_argument("--update-clipper", action="store_true", help="Aktualisiert nur den Clipper-Eintrag in coordinates.js.")
+    parser.add_argument("--output", default=DEFAULT_OUTPUT, help="Pfad zur coordinates.js.")
+    parser.add_argument("--days-back", type=int, default=1, help="Tage vor heute.")
+    parser.add_argument("--days-ahead", type=int, default=400, help="Tage nach heute.")
+    parser.add_argument("--step", default="1 d", help="Horizons-Schrittweite.")
+    return parser.parse_args()
+
+
+def main():
+    arguments = parse_arguments()
+    if arguments.update_clipper:
+        update_clipper(arguments.output, arguments.days_back, arguments.days_ahead, arguments.step)
+        return
+
+    root = tk.Tk()
+    HorizonsApp(root)
+    root.mainloop()
 
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = HorizonsApp(root)
-    root.mainloop()
+    main()
