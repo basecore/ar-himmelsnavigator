@@ -618,6 +618,13 @@
             background-color: #000 !important;
         }
 
+
+        #celestial-info {max-width: min(90vw, 360px);}
+        #celestial-info:not(.minimized) {max-height: 72vh; overflow-y: auto;}
+        #celestial-info .info-row {gap: 12px; align-items: flex-start;}
+        #celestial-info .info-value {text-align: right; overflow-wrap: anywhere; max-width: 220px;}
+        #sensors-readout-panel .sensor-row {gap: 10px;}
+        #sensors-readout-panel .sensor-value {text-align: right; overflow-wrap: anywhere; max-width: 175px;}
 </style>
 </head>
 <body>
@@ -680,6 +687,9 @@
                 <span class="info-label">Im Sichtfeld:</span>
                 <span class="info-value" id="celestial-in-view">--</span>
             </div>
+            <div class="info-row"><span class="info-label">Berechnung:</span><span class="info-value" id="info-calc-source">--</span></div>
+            <div class="info-row"><span class="info-label">Berechnet UTC:</span><span class="info-value" id="info-calc-utc">--</span></div>
+            <div class="info-row"><span class="info-label">Status:</span><span class="info-value" id="info-calc-status">Warte auf Berechnung</span></div>
             <div class="info-row" id="rise-set-row">
                 <span class="info-label" id="rise-label">Aufgang:</span>
                 <span class="info-value" id="rise-time">--:--</span>
@@ -783,6 +793,11 @@
                 <span class="sensor-label">Ort:</span>
                 <span class="sensor-value" id="sensor-location">--</span>
             </div>
+            <div class="sensor-row"><span class="sensor-label">GPS Breite / Länge:</span><span class="sensor-value" id="sensor-gps-coords">--</span></div>
+            <div class="sensor-row"><span class="sensor-label">GPS Genauigkeit:</span><span class="sensor-value" id="sensor-gps-accuracy">--</span></div>
+            <div class="sensor-row"><span class="sensor-label">GPS Höhe:</span><span class="sensor-value" id="sensor-gps-height">--</span></div>
+            <div class="sensor-row"><span class="sensor-label">GPS Fix UTC:</span><span class="sensor-value" id="sensor-gps-time">--</span></div>
+            <div class="sensor-row"><span class="sensor-label">Build:</span><span class="sensor-value" id="sensor-build-version">2026-11-16.3</span></div>
         </div>
     </div>
 
@@ -817,8 +832,8 @@
         </div>
         <div class="panel-content" style="color: #fff;">
             <p style="margin-bottom: 10px;"><strong>AR Himmelsnavigator</strong></p>
-            <p style="margin-bottom: 5px;"><strong>Version:</strong> v1.2</p>
-            <p style="margin-bottom: 5px;"><strong>Datum:</strong> 14.04.2026</p>
+            <p style="margin-bottom: 5px;"><strong>Version:</strong> <span id="app-version-value">2026-11-16.3</span></p>
+            <p style="margin-bottom: 5px;"><strong>Datum:</strong> <span id="app-release-value">16.11.2026</span></p>
             <p style="margin-bottom: 15px;"><strong>Developed by:</strong> Sebastian Rößer</p>
 
             <p style="margin-bottom: 5px;"><a href="https://github.com/basecore/ar-himmelsnavigator" target="_blank" style="color: #00f3ff; text-decoration: none;">🔗 GitHub Repository</a></p>
@@ -926,7 +941,6 @@
             <div class="control-group">
                 <label><input type="checkbox" id="debug-mode"> Debug-Modus</label>
             </div>
-            <pre id="calculation-diagnostics" style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px"></pre>
             <div id="debug-values"></div>
         </div>
     </div>
@@ -936,9 +950,9 @@
         // ===== PWA & SERVICE WORKER =====
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(reg => {
+                navigator.serviceWorker.register('./sw.js', {updateViaCache: 'none'}).then(reg => {
                     console.log('ServiceWorker registriert:', reg.scope);
-                    reg.update().catch(err => console.warn('SW Update:', err));
+                    reg.update().catch(console.warn);
                 }).catch(err => {
                     console.warn('ServiceWorker Fehler:', err);
                 });
@@ -1668,77 +1682,62 @@ setInterval(() => {
 
         // ===== VERBESSERTE LOKALE PLANETEN-BERECHNUNG FÜR ALLE PLANETEN =====
         
-        const APP_BUILD = '2026-11-16.2';
-        const calculationDiagnostics = {};
-        let calculationUtc = null;
-        function unavailablePosition(message, source) {
-            return { azimuth: NaN, altitude: NaN, magnitude: NaN, distance: NaN,
-                velocity: NaN, error: message, source };
+        const APP_BUILD = '2026-11-16.3';
+        const APP_RELEASE_DATE = '16.11.2026';
+        function failedPosition(message, source) {
+            return {azimuth: NaN, altitude: NaN, magnitude: NaN, distance: NaN,
+                velocity: NaN, source, error: message, calculatedUtc: null};
         }
         function calculatePlanetPositionAdvanced(planetName, date, lat, lon) {
-            const source = planetName === 'europa-clipper' ? 'coordinates.js / Clipper + Earth' : 'Astronomy Engine 2.1.19';
+            const source = planetName === 'europa-clipper' ? 'coordinates.js (Clipper / Erde)' : 'Astronomy Engine 2.1.19';
             try {
-                if (!Number.isFinite(lat) || !Number.isFinite(lon)) throw new Error('GPS fehlt');
+                if (!Number.isFinite(lat) || !Number.isFinite(lon)) throw new Error('GPS-Standort fehlt');
                 if (planetName === 'europa-clipper') {
                     for (const series of [clipperCoordinates, earthCoordinates]) {
                         if (!series.length) throw new Error('Ephemeriden fehlen');
-                        const first = new Date(series[0].date).getTime();
-                        const last = new Date(series[series.length - 1].date).getTime();
-                        if (!Number.isFinite(first) || !Number.isFinite(last) || date.getTime() < first || date.getTime() > last)
+                        const start = Date.parse(series[0].date), end = Date.parse(series[series.length - 1].date);
+                        if (!Number.isFinite(start) || !Number.isFinite(end) || date.getTime() < start || date.getTime() > end)
                             throw new Error('Zeit ausserhalb der Ephemeridenabdeckung');
                     }
-                    const result = calculatePlanetPositionLegacy(planetName, date, lat, lon);
-                    if (!Number.isFinite(result.altitude) || !Number.isFinite(result.azimuth)) throw new Error('Ungueltige Clipper-Position');
-                    calculationDiagnostics[planetName] = source;
-                    return { ...result, source };
+                    const p = calculatePlanetPositionLegacy(planetName, date, lat, lon);
+                    if (![p.azimuth, p.altitude].every(Number.isFinite)) throw new Error('Ungueltige Koordinaten');
+                    return {...p, source, calculatedUtc: date.toISOString(), validation: 'Horizons-Abgleich offen'};
                 }
-                if (typeof Astronomy === 'undefined') throw new Error('Astronomy Engine nicht geladen (Netz/CDN pruefen)');
-                const names = { mercury: 'Mercury', venus: 'Venus', mars: 'Mars', jupiter: 'Jupiter', saturn: 'Saturn', uranus: 'Uranus', neptune: 'Neptune' };
-                if (!names[planetName]) throw new Error('Unbekannter Planet');
-                const body = Astronomy.Body[names[planetName]];
+                if (typeof Astronomy === 'undefined') throw new Error('Astronomy Engine nicht geladen');
+                const map = {mercury:'Mercury',venus:'Venus',mars:'Mars',jupiter:'Jupiter',saturn:'Saturn',uranus:'Uranus',neptune:'Neptune'};
+                if (!map[planetName]) throw new Error('Unbekanntes Objekt');
+                const body = Astronomy.Body[map[planetName]];
                 const observer = new Astronomy.Observer(lat, lon, Number.isFinite(userLocation.height) ? userLocation.height : 0);
                 const equ = Astronomy.Equator(body, date, observer, true, true);
                 const hor = Astronomy.Horizon(date, observer, equ.ra, equ.dec, 'normal');
-                const light = Astronomy.Illumination(body, date);
-                if (![hor.azimuth, hor.altitude, light.geo_dist, light.mag].every(Number.isFinite)) throw new Error('Ungueltiges Berechnungsergebnis');
-                calculationDiagnostics[planetName] = source;
-                return { azimuth: hor.azimuth, altitude: hor.altitude, distance: light.geo_dist,
-                    magnitude: light.mag, velocity: NaN, ra: equ.ra, dec: equ.dec, source };
-            } catch (error) {
-                calculationDiagnostics[planetName] = source + ': ' + error.message;
-                return unavailablePosition(error.message, source);
-            }
+                const illumination = Astronomy.Illumination(body, date);
+                if (![hor.azimuth, hor.altitude, illumination.geo_dist, illumination.mag].every(Number.isFinite)) throw new Error('Ungueltiges Berechnungsergebnis');
+                return {azimuth:hor.azimuth, altitude:hor.altitude, magnitude:illumination.mag,
+                    distance:illumination.geo_dist, velocity:NaN, source, calculatedUtc:date.toISOString()};
+            } catch (error) { return failedPosition(error.message, source); }
         }
-        function refreshCalculationDiagnostics() {
-            const target = document.getElementById('calculation-diagnostics');
-            if (!target) return;
-            const pos = getCurrentCelestialPosition();
-            const fmt = value => Number.isFinite(value) ? value.toFixed(6) : 'nicht verfuegbar';
-            const seriesRange = series => series.length ? series[0].date + ' bis ' + series[series.length - 1].date : 'fehlt';
-            target.textContent = [
-                'Build: ' + APP_BUILD,
-                'UTC jetzt: ' + new Date().toISOString(),
-                'Berechnung UTC: ' + (calculationUtc || 'noch keine'),
-                'GPS Breite: ' + fmt(userLocation.lat) + ' / Laenge: ' + fmt(userLocation.lon),
-                'GPS Hoehe (m): ' + fmt(userLocation.height),
-                'GPS Genauigkeit (m): ' + fmt(userLocation.accuracy),
-                'Objekt: ' + currentCelestialBody,
-                'Quelle/Status: ' + (calculationDiagnostics[currentCelestialBody] || (['sun','moon'].includes(currentCelestialBody) ? 'SunCalc' : 'wartet auf Berechnung')),
-                'Azimut: ' + fmt(pos.azimuth) + ' Grad / Hoehe: ' + fmt(pos.altitude) + ' Grad',
-                'Planeten: topozentrisch, Refraktion normal; Entfernung geozentrisch in AE',
-                'Clipper: bisherige Vektorumrechnung; NICHT gegen Horizons validiert',
-                'Clipper-Daten: ' + seriesRange(clipperCoordinates),
-                'Erde-Daten: ' + seriesRange(earthCoordinates),
-                'SW: ' + (navigator.serviceWorker && navigator.serviceWorker.controller ? navigator.serviceWorker.controller.scriptURL : 'kein aktiver Controller'),
-                'Orientierung: ' + screenOrientation,
-                'Star Walk Referenz: 2026-11-16T19:41:06Z, Regensburg (Stadtnaeherung)',
-                'Saturn Referenz: Az 172.708694 Grad / Alt 41.636361 Grad',
-                'NASA/Star-Walk-Abgleich: noch NICHT bestaetigt'
-            ].join('\n');
+        function refreshInfoDiagnostics() {
+            const set = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
+            const p = getCurrentCelestialPosition();
+            const valid = Number.isFinite(p.azimuth) && Number.isFinite(p.altitude);
+            const fmt = (value, digits=5) => Number.isFinite(value) ? value.toFixed(digits) : '--';
+            const source = p.source || (currentCelestialBody === 'sun' || currentCelestialBody === 'moon' ? 'SunCalc 1.9.0' : 'noch nicht berechnet');
+            set('info-calc-source', source);
+            set('info-calc-utc', p.calculatedUtc ? p.calculatedUtc.replace('T',' ').replace('Z',' UTC') : '--');
+            set('info-calc-status', p.error || (!valid ? 'Warte auf GPS / Berechnung' : (p.validation || 'Berechnet; Referenztest offen')));
+            set('celestial-azimuth', valid ? p.azimuth.toFixed(2) + '°' : '--');
+            set('celestial-elevation', valid ? p.altitude.toFixed(2) + '°' : '--');
+            set('sensor-gps-coords', fmt(userLocation.lat) + ' / ' + fmt(userLocation.lon));
+            set('sensor-gps-accuracy', fmt(userLocation.accuracy,1) + ' m');
+            set('sensor-gps-height', fmt(userLocation.height,1) + ' m');
+            set('sensor-gps-time', userLocation.fixUtc || '--');
+            set('sensor-build-version', APP_BUILD);
+            set('app-version-value', APP_BUILD);
+            set('app-release-value', APP_RELEASE_DATE);
         }
         document.addEventListener('DOMContentLoaded', () => {
-            refreshCalculationDiagnostics();
-            setInterval(refreshCalculationDiagnostics, 1000);
+            refreshInfoDiagnostics();
+            setInterval(refreshInfoDiagnostics, 1000);
         });
 
         function calculatePlanetPositionLegacy(planetName, date, lat, lon) {
@@ -1978,6 +1977,7 @@ setInterval(() => {
         }
 
         function updateInfoPanelForCelestialBody() {
+            refreshInfoDiagnostics();
             const title = document.getElementById('info-title');
             const riseLabel = document.getElementById('rise-label');
             const setLabel = document.getElementById('set-label');
@@ -2116,7 +2116,6 @@ setInterval(() => {
         }
 
         async function updateRealtimeCelestialPositions() {
-            calculationUtc = new Date().toISOString();
             if (!Number.isFinite(userLocation.lat) || !Number.isFinite(userLocation.lon)) return;
             
             const now = new Date();
@@ -2127,6 +2126,7 @@ setInterval(() => {
             
             sunPosition.azimuth = ((sunPos.azimuth * 180 / Math.PI) + 180) % 360;
             sunPosition.altitude = sunPos.altitude * 180 / Math.PI;
+            sunPosition.calculatedUtc = now.toISOString();
             
             const moonPos = SunCalc.getMoonPosition(now, userLocation.lat, userLocation.lon);
             const moonTimes = SunCalc.getMoonTimes(now, userLocation.lat, userLocation.lon);
@@ -2134,6 +2134,7 @@ setInterval(() => {
             
             moonPosition.azimuth = ((moonPos.azimuth * 180 / Math.PI) + 180) % 360;
             moonPosition.altitude = moonPos.altitude * 180 / Math.PI;
+            moonPosition.calculatedUtc = now.toISOString();
             
             // **ALLE PLANETEN BERECHNEN**
             for (const body of ['mercury', 'venus', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune', 'europa-clipper']) {
@@ -2152,7 +2153,7 @@ setInterval(() => {
             
             updateRealtimeInfo(now, sunTimes, moonTimes, moonIllumination);
             lastRenderState.body = null;
-            refreshCalculationDiagnostics();
+            refreshInfoDiagnostics();
             scheduleSensorVisualUpdate();
         }
 
@@ -3133,8 +3134,9 @@ setInterval(() => {
                     position => {
                         userLocation.lat = position.coords.latitude;
                         userLocation.lon = position.coords.longitude;
-                    userLocation.height = position.coords.altitude;
-                    userLocation.accuracy = position.coords.accuracy;
+                        userLocation.height = position.coords.altitude;
+                        userLocation.accuracy = position.coords.accuracy;
+                        userLocation.fixUtc = new Date(position.timestamp).toISOString();
                         updateRealtimeCelestialPositions();
                         // Reverse-Geocoding: Stadt anzeigen
                         fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${userLocation.lat}&lon=${userLocation.lon}&zoom=10&addressdetails=1`)
