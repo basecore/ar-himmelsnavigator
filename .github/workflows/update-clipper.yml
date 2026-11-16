@@ -1,0 +1,61 @@
+name: Europa Clipper Ephemeride aktualisieren
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-clipper
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Clipper-Ephemeride abrufen
+        run: |
+          python Clipper_Downloader.py \
+            --update-clipper \
+            --output coordinates.js \
+            --days-back 1 \
+            --days-ahead 400 \
+            --step "1 d"
+
+      - name: Aktualisierte Datei validieren
+        run: |
+          test -s coordinates.js
+          grep -q "'Clipper'" coordinates.js
+          TODAY="$(date -u '+%Y-%m-%d')"
+          grep -q "$TODAY" coordinates.js || {
+            echo "::error::coordinates.js enthält keinen Datenpunkt für $TODAY."
+            exit 1
+          }
+
+      - name: Änderungen committen und pushen
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet -- coordinates.js; then
+            echo "Keine Änderung an coordinates.js."
+            exit 0
+          fi
+
+          git add coordinates.js
+          git commit -m "chore: Europa Clipper Ephemeride aktualisieren ($(date -u '+%Y-%m-%d %H:%M UTC'))"
+          git push
